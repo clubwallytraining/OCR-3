@@ -3,73 +3,67 @@
 <head>
     <meta charset="utf-8" />
     <title>Mobile Camera Stream with Video.js</title>
-    <!-- Dark Theme Background -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- Video.js CDN (Latest Version) -->
+    <!-- Video.js (Latest) -->
     <link rel="stylesheet" href="https://vjs.zencdn.net/8.0.4/video-js.css" />
     <script src="https://vjs.zencdn.net/8.0.4/video.min.js"></script>
 
     <style>
-        /* Global Dark Theme */
+        /* Dark Theme */
         html, body {
             margin: 0;
             padding: 0;
-            background-color: #121212;
-            color: #FFFFFF;
-            font-family: sans-serif;
-            height: 100%;
             width: 100%;
-            overflow: hidden;
+            height: 100%;
+            background-color: #121212;
+            color: #ffffff;
+            font-family: sans-serif;
         }
 
         /* Container for the video */
         #videoContainer {
             position: relative;
             width: 100%;
-            height: 100%;
-            overflow: hidden;
+            height: 100vh;
+            background-color: #000;
         }
 
-        /* The Video.js player styling */
+        /* The Video.js player must fill the container */
         .video-js {
             width: 100% !important;
             height: 100% !important;
             background-color: #000000;
         }
 
-        /* Floating camera settings panel */
+        /* Floating camera/resolution settings panel */
         #cameraSettingsPanel {
             position: absolute;
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
             display: flex;
-            flex-direction: row;
+            align-items: center;
+            justify-content: center;
             background: rgba(0, 0, 0, 0.6);
             border-radius: 20px;
             padding: 8px;
             z-index: 9999;
-            align-items: center;
-            justify-content: center;
             backdrop-filter: blur(8px);
         }
-
-        /* Horizontal carousel for camera/resolution buttons */
         #cameraSettingsPanel .carouselContainer {
             display: flex;
             flex-direction: row;
             gap: 8px;
             overflow-x: auto;
-            scrollbar-width: none; /* Hide scrollbar in Firefox */
+            scrollbar-width: none;
         }
         #cameraSettingsPanel .carouselContainer::-webkit-scrollbar {
-            display: none; /* Hide scrollbar in Chrome, Safari, Opera */
+            display: none;
         }
 
-        /* Button styling */
+        /* Buttons for camera/resolution selection */
         .settingBtn {
-            flex: 0 0 auto;
             background-color: #1f1f1f;
             color: #ffffff;
             border: none;
@@ -77,8 +71,8 @@
             padding: 10px 16px;
             cursor: pointer;
             white-space: nowrap;
-            transition: background-color 0.3s ease;
             font-size: 14px;
+            transition: background-color 0.3s ease;
         }
         .settingBtn:hover {
             background-color: #333333;
@@ -91,12 +85,32 @@
             left: 10px;
             color: #FFFFFF;
             font-size: 16px;
-            text-shadow: 0 0 5px rgba(0, 0, 0, 0.7);
+            text-shadow: 0 0 5px rgba(0,0,0,0.7);
             z-index: 9999;
-            pointer-events: none; /* Let clicks pass through to the video */
+            pointer-events: none;
+        }
+
+        /* Permission request button (if needed) */
+        #permissionRequest {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: #333;
+            color: #fff;
+            border: none;
+            border-radius: 20px;
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            display: none; /* default hidden, shown only if no permission */
+        }
+        #permissionRequest:hover {
+            background-color: #444;
         }
     </style>
 </head>
+
 <body>
     <div id="videoContainer">
         <!-- FPS Counter -->
@@ -107,85 +121,122 @@
             id="myVideo"
             class="video-js vjs-default-skin"
             playsinline
-            autoplay
             muted
+            autoplay
         ></video>
 
-        <!-- Floating Camera/Resolution Button Panel -->
+        <!-- Camera/Resolution Panel -->
         <div id="cameraSettingsPanel">
-            <div class="carouselContainer" id="carouselContainer">
-                <!-- Buttons for camera selection and resolutions will be dynamically added here -->
-            </div>
+            <div class="carouselContainer" id="carouselContainer"></div>
         </div>
+
+        <!-- Button to explicitly request permissions if none are granted -->
+        <button id="permissionRequest">Allow Camera Access</button>
     </div>
 
     <script>
         /*
-         *  This script does the following:
-         *  1. Checks/requests camera permissions.
-         *  2. After permission is granted the first time, refreshes the page so that we can initialize the stream.
-         *  3. Enumerates all available video input devices and populates them as selectable buttons.
-         *  4. Enumerates a few common resolutions for each camera so user can pick the desired size.
-         *  5. Uses Video.js to display the chosen camera stream with hardware acceleration where available.
-         *  6. Displays an FPS counter in the top-left corner.
+         *  Flow:
+         *  1) Check permission status via Permissions API if available, else try getUserMedia in a catch block.
+         *  2) If not granted, show a button for user to click and request permission. 
+         *  3) Once granted, proceed to:
+         *     - Enumerate devices
+         *     - Populate camera/resolution buttons
+         *     - Start stream with default camera & resolution
+         *  4) Show FPS overlay at top-left.
          */
 
-        // Track camera permission in session to know if we've prompted
-        const cameraPermissionKey = 'cameraPermissionsChecked';
-
-        // Some preset resolutions for user selection
+        const cameraPermissionKey = 'cameraPermissionGranted';
         const possibleResolutions = [
-            { width: 640, height: 480, label: '480p' },
-            { width: 1280, height: 720, label: '720p' },
-            { width: 1920, height: 1080, label: '1080p' }
+            { width: 640,  height: 480,  label: '480p' },
+            { width: 1280, height: 720,  label: '720p' },
+            { width: 1920, height: 1080, label: '1080p' },
         ];
-
-        // If we have not yet checked for permissions, attempt to do so now
-        (async function checkCameraPermissions() {
-            if (!sessionStorage.getItem(cameraPermissionKey)) {
-                try {
-                    // Attempt to get access to the camera
-                    await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-                    // If successful, store permission state and refresh the page
-                    sessionStorage.setItem(cameraPermissionKey, 'granted');
-                    window.location.reload();
-                } catch (err) {
-                    console.warn("User denied camera permissions or an error occurred:", err);
-                    // If user denies or there's an error, we won't auto-refresh.
-                    // The user can manually enable permissions in the browser settings or reload.
-                }
-            } else {
-                // Permissions likely granted previously, proceed
-                initPage();
-            }
-        })();
 
         let player = null;
         let currentStream = null;
 
+        // Detect if we have permission using the newer Permissions API (not available in all browsers)
+        // If we can't detect, we fallback to a direct getUserMedia test.
+        async function checkPermissionsOnLoad() {
+            try {
+                if ('permissions' in navigator && navigator.permissions.query) {
+                    const result = await navigator.permissions.query({ name: 'camera' });
+                    if (result.state === 'granted') {
+                        sessionStorage.setItem(cameraPermissionKey, 'true');
+                        initPage();
+                    } else if (result.state === 'prompt') {
+                        // Show the request permission button
+                        showPermissionButton();
+                    } else if (result.state === 'denied') {
+                        // Permission previously denied - user must go to browser settings or refresh
+                        showPermissionButton();
+                    }
+                } else {
+                    // If the Permissions API isn't supported, do a manual getUserMedia test:
+                    await tryGetUserMediaOnce();
+                }
+            } catch (err) {
+                console.error('checkPermissionsOnLoad error:', err);
+                // If that fails, user likely needs to explicitly grant
+                showPermissionButton();
+            }
+        }
+
+        async function tryGetUserMediaOnce() {
+            // Attempt to see if user has already granted permission (or if prompt appears)
+            try {
+                await navigator.mediaDevices.getUserMedia({ video: true });
+                sessionStorage.setItem(cameraPermissionKey, 'true');
+                // Reload so we can properly initialize cameras
+                window.location.reload();
+            } catch (err) {
+                // If user denied or error occurred, show the permission button
+                showPermissionButton();
+            }
+        }
+
+        function showPermissionButton() {
+            const permissionBtn = document.getElementById('permissionRequest');
+            permissionBtn.style.display = 'block';
+            permissionBtn.addEventListener('click', async () => {
+                try {
+                    await navigator.mediaDevices.getUserMedia({ video: true });
+                    sessionStorage.setItem(cameraPermissionKey, 'true');
+                    window.location.reload();
+                } catch (err) {
+                    console.error('User denied or error:', err);
+                }
+            });
+        }
+
+        // Initialize the Video.js player and set up device/resolution selection
         async function initPage() {
-            // Initialize the Video.js player
+            // If permission not set or browser doesn't support getUserMedia, do nothing
+            if (!sessionStorage.getItem(cameraPermissionKey)) return;
+
+            // Initialize Video.js
             player = videojs('myVideo', {
                 autoplay: true,
                 controls: false,
                 fluid: true,
+                // We'll let the browser do hardware accel if possible
                 html5: {
-                    // Attempt hardware acceleration if available
                     nativeVideoTracks: false,
                     nativeAudioTracks: false,
-                    nativeTextTracks: false
+                    nativeTextTracks: false,
                 }
             });
 
-            // Populate camera and resolution selections
+            // Enumerate cameras and build control buttons
             await populateCameraSettings();
 
-            // Start with the first available camera at the default resolution
-            // (We'll choose the first device ID and one of our preset resolutions)
+            // Auto-select first camera in the list, default to 720p if available
             const devices = await navigator.mediaDevices.enumerateDevices();
             const firstCamera = devices.find(d => d.kind === 'videoinput');
             if (firstCamera) {
-                await setCamera(firstCamera.deviceId, possibleResolutions[1]); // default to 720p
+                // try 720p
+                setCamera(firstCamera.deviceId, { width: 1280, height: 720, label: '720p' });
             }
 
             // Start the FPS counter
@@ -197,52 +248,56 @@
             const videoDevices = deviceInfos.filter(device => device.kind === 'videoinput');
 
             const carouselContainer = document.getElementById('carouselContainer');
-            carouselContainer.innerHTML = ''; // Clear existing buttons if any
+            carouselContainer.innerHTML = '';
 
-            // For each camera
-            videoDevices.forEach((cameraDevice) => {
-                // For each resolution
+            videoDevices.forEach(cameraDevice => {
                 possibleResolutions.forEach(res => {
-                    const button = document.createElement('button');
-                    button.className = 'settingBtn';
-                    button.textContent = `${cameraDevice.label || 'Camera'} (${res.label})`;
-                    button.onclick = () => {
+                    const btn = document.createElement('button');
+                    btn.className = 'settingBtn';
+                    // cameraDevice.label might be empty on some mobile browsers until permission is granted
+                    const camLabel = cameraDevice.label || 'Camera';
+                    btn.textContent = `${camLabel} (${res.label})`;
+                    btn.onclick = () => {
                         setCamera(cameraDevice.deviceId, res);
                     };
-                    carouselContainer.appendChild(button);
+                    carouselContainer.appendChild(btn);
                 });
             });
         }
 
         async function setCamera(deviceId, resolutionObj) {
-            // Stop any active stream before starting a new one
+            // Stop any existing stream
             if (currentStream) {
                 currentStream.getTracks().forEach(track => track.stop());
             }
 
             try {
+                // Use 'ideal' instead of 'exact' so we don't fail if phone doesn't support that resolution
                 const constraints = {
                     video: {
                         deviceId: { exact: deviceId },
-                        width: { exact: resolutionObj.width },
-                        height: { exact: resolutionObj.height }
+                        width: { ideal: resolutionObj.width },
+                        height: { ideal: resolutionObj.height }
                     },
                     audio: false
                 };
-
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 currentStream = stream;
-                // Set the player source to the new stream
+
+                // Use the player's HTML5 tech so it picks up the stream
                 if (player) {
+                    // This approach works reliably in recent versions of Video.js:
                     player.srcObject = stream;
-                    player.play();
+                    player.play().catch(err => {
+                        console.error('Autoplay was prevented:', err);
+                    });
                 }
-            } catch (error) {
-                console.error("Could not set camera:", error);
+            } catch (err) {
+                console.error('Error setting camera:', err);
             }
         }
 
-        // Simple FPS counter using requestAnimationFrame timing
+        /* Simple FPS counter using requestAnimationFrame */
         let lastTimestamp = 0;
         let frames = 0;
         function startFPSCounter() {
@@ -262,6 +317,16 @@
             }
             requestAnimationFrame(updateFPSCounter);
         }
+
+        // On load, check or request permission
+        window.addEventListener('DOMContentLoaded', () => {
+            // If already granted once in this session, init directly
+            if (sessionStorage.getItem(cameraPermissionKey)) {
+                initPage();
+            } else {
+                checkPermissionsOnLoad();
+            }
+        });
     </script>
 </body>
 </html>

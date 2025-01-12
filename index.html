@@ -6,11 +6,11 @@
     <title>Mobile Camera Stream with Video.js</title>
     
     <!-- Video.js CSS -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/video.js/9.0.0/video-js.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/video.js/9.1.0/video-js.min.css" rel="stylesheet">
     
     <!-- Custom Styles -->
     <style>
-        /* Apply dark theme */
+        /* Apply dark theme to the entire page */
         body {
             margin: 0;
             padding: 0;
@@ -22,14 +22,14 @@
             position: relative;
         }
 
-        /* Video.js player styling */
+        /* Video.js player styling to cover the entire viewport */
         .video-js {
             width: 100%;
             height: 100%;
-            object-fit: cover; /* Ensure video covers the entire viewport */
+            object-fit: cover; /* Ensures the video covers the entire viewport */
         }
 
-        /* Floating buttons container */
+        /* Floating buttons container at the bottom center */
         .controls-container {
             position: fixed;
             bottom: 20px;
@@ -40,6 +40,7 @@
             padding: 10px;
             background: rgba(0, 0, 0, 0.5);
             border-radius: 30px;
+            z-index: 1000;
         }
 
         /* Hide scrollbar for WebKit browsers */
@@ -47,7 +48,7 @@
             display: none;
         }
 
-        /* Button styling */
+        /* Styling for control buttons */
         .control-button {
             flex: 0 0 auto;
             margin: 0 10px;
@@ -69,7 +70,7 @@
             transform: scale(1.05);
         }
 
-        /* FPS Counter styling */
+        /* FPS Counter styling in the top-left corner */
         #fpsCounter {
             position: fixed;
             top: 10px;
@@ -80,7 +81,7 @@
             z-index: 1000;
         }
 
-        /* Error message styling */
+        /* Error message styling centered on the screen */
         #errorMessage {
             position: fixed;
             top: 50%;
@@ -93,6 +94,73 @@
             font-size: 18px;
             display: none; /* Hidden by default */
             z-index: 1001;
+        }
+
+        /* Modal overlay styling */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: none; /* Hidden by default */
+            justify-content: center;
+            align-items: center;
+            z-index: 1002;
+        }
+
+        /* Modal content styling */
+        .modal-content {
+            background: #1f1f1f;
+            padding: 20px;
+            border-radius: 10px;
+            width: 80%;
+            max-width: 400px;
+        }
+
+        /* Modal header */
+        .modal-header {
+            font-size: 20px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        /* List styling inside modals */
+        .modal-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .modal-list li {
+            padding: 10px;
+            background: #2c2c2c;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .modal-list li:hover {
+            background: #444444;
+        }
+
+        /* Close button for modals */
+        .close-button {
+            display: block;
+            margin: 10px auto 0;
+            padding: 10px 20px;
+            background-color: #333333;
+            border: none;
+            border-radius: 5px;
+            color: #ffffff;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .close-button:hover {
+            background-color: #555555;
         }
     </style>
 </head>
@@ -118,8 +186,26 @@
     <!-- Error Message -->
     <div id="errorMessage"></div>
 
+    <!-- Camera Selection Modal -->
+    <div id="cameraModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">Select Camera</div>
+            <ul id="cameraList" class="modal-list"></ul>
+            <button class="close-button" onclick="closeModal('cameraModal')">Close</button>
+        </div>
+    </div>
+
+    <!-- Resolution Selection Modal -->
+    <div id="resolutionModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">Select Resolution</div>
+            <ul id="resolutionList" class="modal-list"></ul>
+            <button class="close-button" onclick="closeModal('resolutionModal')">Close</button>
+        </div>
+    </div>
+
     <!-- Video.js JS -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/video.js/9.0.0/video.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/video.js/9.1.0/video.min.js"></script>
     
     <!-- Custom Scripts -->
     <script>
@@ -139,11 +225,11 @@
                 { label: '1080p', width: 1920, height: 1080 },
                 { label: '4K', width: 3840, height: 2160 }
             ];
-            let currentResolutionIndex = 0;
+            let currentResolution = resolutions[0]; // Default to 720p
 
             // Available video input devices
             let videoInputDevices = [];
-            let currentCameraIndex = 0;
+            let currentCameraId = null; // ID of the currently selected camera
 
             /**
              * Display error messages to the user
@@ -167,16 +253,22 @@
                 videoPlayer = videojs('myVideo', {
                     autoplay: true,
                     controls: false,
-                    sources: [{
-                        src: URL.createObjectURL(stream),
-                        type: stream.getVideoTracks()[0].getSettings().width ? 'video/mp4' : 'video/webm' // Dynamically set type
-                    }],
                     fluid: true,
                     preload: 'auto'
                 });
 
-                // Enable hardware acceleration via CSS
+                // Set the video source to the MediaStream
                 const videoElement = document.getElementById('myVideo_html5_api');
+                if ('srcObject' in videoElement) {
+                    videoElement.srcObject = stream;
+                } else {
+                    // Fallback for older browsers
+                    videoElement.src = URL.createObjectURL(stream);
+                }
+
+                videoPlayer.play();
+
+                // Enable hardware acceleration via CSS
                 if (videoElement) {
                     videoElement.style.transform = 'translateZ(0)';
                 }
@@ -240,7 +332,14 @@
                     videoStream = await navigator.mediaDevices.getUserMedia(constraints);
                     initializeVideoPlayer(videoStream);
                 } catch (err) {
-                    showError('Error accessing the camera with the selected settings.');
+                    // Handle specific errors
+                    if (err.name === 'NotAllowedError') {
+                        showError('Camera access denied. Please allow camera permissions to use this feature.');
+                    } else if (err.name === 'NotFoundError') {
+                        showError('No camera devices found with the selected settings.');
+                    } else {
+                        showError('Error accessing the camera.');
+                    }
                     console.error(err);
                 }
             }
@@ -258,8 +357,10 @@
                         return;
                     }
                     // Start video stream with the first available camera and default resolution
-                    await startVideoStream(videoInputDevices[currentCameraIndex].deviceId, resolutions[currentResolutionIndex]);
+                    currentCameraId = videoInputDevices[0].deviceId;
+                    await startVideoStream(currentCameraId, currentResolution);
                 } catch (err) {
+                    // Handle specific errors
                     if (err.name === 'NotAllowedError') {
                         showError('Camera access denied. Please allow camera permissions to use this feature.');
                     } else if (err.name === 'NotFoundError') {
@@ -272,35 +373,100 @@
             }
 
             /**
-             * Populate and handle the Camera selection button
+             * Setup the Camera selection button to open the camera selection modal
              */
             function setupCameraButton() {
                 const cameraButton = document.getElementById('cameraButton');
-                cameraButton.addEventListener('click', async () => {
-                    if (videoInputDevices.length < 2) {
-                        alert('Only one camera detected.');
-                        return;
-                    }
-                    // Toggle between available cameras
-                    currentCameraIndex = (currentCameraIndex + 1) % videoInputDevices.length;
-                    await startVideoStream(videoInputDevices[currentCameraIndex].deviceId, resolutions[currentResolutionIndex]);
+                cameraButton.addEventListener('click', () => {
+                    populateCameraList();
+                    openModal('cameraModal');
                 });
             }
 
             /**
-             * Populate and handle the Resolution selection button
+             * Setup the Resolution selection button to open the resolution selection modal
              */
             function setupResolutionButton() {
                 const resolutionButton = document.getElementById('resolutionButton');
-                resolutionButton.addEventListener('click', async () => {
-                    // Cycle through predefined resolutions
-                    currentResolutionIndex = (currentResolutionIndex + 1) % resolutions.length;
-                    await startVideoStream(videoInputDevices[currentCameraIndex].deviceId, resolutions[currentResolutionIndex]);
-                    resolutionButton.textContent = `Resolution: ${resolutions[currentResolutionIndex].label}`;
+                resolutionButton.addEventListener('click', () => {
+                    populateResolutionList();
+                    openModal('resolutionModal');
                 });
-                // Initialize button text
-                resolutionButton.textContent = `Resolution: ${resolutions[currentResolutionIndex].label}`;
             }
+
+            /**
+             * Populate the Camera selection list in the modal
+             */
+            function populateCameraList() {
+                const cameraList = document.getElementById('cameraList');
+                cameraList.innerHTML = ''; // Clear existing list
+
+                videoInputDevices.forEach((device, index) => {
+                    const li = document.createElement('li');
+                    li.textContent = device.label || `Camera ${index + 1}`;
+                    li.addEventListener('click', async () => {
+                        currentCameraId = device.deviceId;
+                        await startVideoStream(currentCameraId, currentResolution);
+                        closeModal('cameraModal');
+                    });
+                    cameraList.appendChild(li);
+                });
+            }
+
+            /**
+             * Populate the Resolution selection list in the modal
+             */
+            function populateResolutionList() {
+                const resolutionList = document.getElementById('resolutionList');
+                resolutionList.innerHTML = ''; // Clear existing list
+
+                resolutions.forEach((res) => {
+                    const li = document.createElement('li');
+                    li.textContent = res.label;
+                    li.addEventListener('click', async () => {
+                        currentResolution = res;
+                        await startVideoStream(currentCameraId, currentResolution);
+                        closeModal('resolutionModal');
+                    });
+                    resolutionList.appendChild(li);
+                });
+            }
+
+            /**
+             * Open a modal by its ID
+             * @param {string} modalId - The ID of the modal to open
+             */
+            function openModal(modalId) {
+                const modal = document.getElementById(modalId);
+                if (modal) {
+                    modal.style.display = 'flex';
+                }
+            }
+
+            /**
+             * Close a modal by its ID
+             * @param {string} modalId - The ID of the modal to close
+             */
+            function closeModal(modalId) {
+                const modal = document.getElementById(modalId);
+                if (modal) {
+                    modal.style.display = 'none';
+                }
+            }
+
+            /**
+             * Close modals when clicking outside the modal content
+             */
+            window.addEventListener('click', (event) => {
+                const cameraModal = document.getElementById('cameraModal');
+                const resolutionModal = document.getElementById('resolutionModal');
+                if (event.target === cameraModal) {
+                    closeModal('cameraModal');
+                }
+                if (event.target === resolutionModal) {
+                    closeModal('resolutionModal');
+                }
+            });
 
             // Initialize the application
             await initializeCamera();

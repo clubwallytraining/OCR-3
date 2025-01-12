@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Video.js Mobile Camera Stream</title>
+  <meta charset="UTF-8"/>
+  <title>Mobile Camera Stream - Video.js</title>
 
-  <!-- Video.js CSS (latest version via CDN) -->
+  <!-- Latest Video.js CSS via CDN -->
   <link
     href="https://cdnjs.cloudflare.com/ajax/libs/video.js/8.4.0/video-js.min.css"
     rel="stylesheet"
@@ -12,32 +12,31 @@
 
   <style>
     /****************************************************
-     * DARK THEME + BASIC PAGE RESET
+     * RESET & LAYOUT
      ****************************************************/
-    body {
+    html, body {
       margin: 0;
       padding: 0;
-      background-color: #121212;
+      width: 100%;
+      height: 100%;
+      background-color: #121212; /* dark background */
       color: #ffffff;
       font-family: sans-serif;
-      /* NOTE: removed overflow:hidden to ensure floating controls are visible */
+      overflow: hidden; /* prevent scrolling - entire viewport used by video */
     }
 
-    /****************************************************
-     * MAIN CONTAINER
-     ****************************************************/
     #videoContainer {
       position: relative;
       width: 100vw;
       height: 100vh;
+      background: #000; /* fallback if no video */
       display: flex;
       justify-content: center;
       align-items: center;
-      background-color: #000; /* fallback background */
     }
 
     /****************************************************
-     * VIDEO.JS STYLING
+     * VIDEO.JS PLAYER
      ****************************************************/
     .video-js {
       width: 100vw !important;
@@ -45,8 +44,7 @@
       object-fit: cover;
       background-color: #000;
     }
-
-    /* Hardware acceleration to help performance */
+    /* Hardware acceleration to boost performance on mobile */
     .vjs-tech {
       will-change: transform;
       transform: translateZ(0);
@@ -54,7 +52,7 @@
     }
 
     /****************************************************
-     * FPS COUNTER STYLING
+     * FPS COUNTER
      ****************************************************/
     #fpsCounter {
       position: absolute;
@@ -62,151 +60,168 @@
       left: 10px;
       font-size: 14px;
       font-weight: bold;
-      color: #ffffff;
+      color: #fff;
       text-shadow: 0 0 5px rgba(0,0,0,0.8);
       z-index: 9999;
     }
 
     /****************************************************
-     * FLOATING TOGGLE BUTTON
+     * BUTTONS FOR CAMERA & RESOLUTION
      ****************************************************/
-    #controlToggleBtn {
+    /* Common style for floating buttons */
+    .floatingBtn {
       position: absolute;
-      bottom: 20px;
       right: 20px;
       border: none;
-      border-radius: 50px;
-      background-color: #666666;
-      color: #ffffff;
-      padding: 15px 20px;
+      border-radius: 25px;
+      background-color: #444;
+      color: #fff;
+      padding: 12px 20px;
       cursor: pointer;
-      font-size: 16px;
-      box-shadow: 0 3px 6px rgba(0,0,0,0.4);
-      z-index: 9999;
+      font-size: 14px;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.3);
       transition: background-color 0.3s;
+      z-index: 9998;
     }
-    #controlToggleBtn:hover {
-      background-color: #999999;
+    .floatingBtn:hover {
+      background-color: #666;
+    }
+
+    /* Camera button at bottom (stack them with small offset) */
+    #cameraBtn {
+      bottom: 80px;
+    }
+
+    /* Resolution button below camera button */
+    #resolutionBtn {
+      bottom: 20px;
     }
 
     /****************************************************
-     * CAROUSEL FOR DEVICES & RESOLUTIONS
+     * OVERLAY PANELS FOR CAMERA DEVICES & RESOLUTIONS
      ****************************************************/
-    #carouselContainer {
+    .overlayPanel {
       position: absolute;
-      bottom: 90px;
       right: 20px;
-      background-color: rgba(0,0,0,0.7);
+      bottom: 140px; /* appear above the camera & resolution buttons */
+      background-color: rgba(0,0,0,0.8);
       border-radius: 10px;
       padding: 10px;
-      display: none; /* hidden until toggled */
-      max-width: 70vw;
-      overflow-x: auto;
-      white-space: nowrap;
+      display: none; /* toggled dynamically */
+      max-height: 50vh; /* scroll within panel if many items */
+      overflow-y: auto;
+      min-width: 120px;
       z-index: 9999;
     }
 
-    .carouselItem {
-      display: inline-block;
-      margin-right: 10px;
-      padding: 10px 15px;
-      background-color: #333333;
-      border-radius: 25px;
+    /* Each option in the overlay panel */
+    .optionBtn {
+      display: block;
+      width: 100%;
+      margin: 5px 0;
+      padding: 8px 12px;
+      text-align: center;
+      background-color: #333;
+      border-radius: 20px;
+      color: #fff;
       cursor: pointer;
       font-size: 14px;
-      color: #ffffff;
-      text-align: center;
       transition: background-color 0.3s;
-      min-width: 80px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      overflow: hidden;
     }
-    .carouselItem:hover {
-      background-color: #555555;
+    .optionBtn:hover {
+      background-color: #555;
     }
   </style>
 </head>
 <body>
-  <!-- NOTE: getUserMedia typically requires HTTPS. If testing locally, use a secure environment. -->
+  <!-- NOTE: If testing locally, serve over HTTPS or use a secure environment. -->
 
   <div id="videoContainer">
-    <!-- FPS Counter -->
+    <!-- FPS counter -->
     <div id="fpsCounter">FPS: --</div>
 
     <!-- Video.js Player -->
-    <video
-      id="myVideo"
+    <video 
+      id="myVideo" 
       class="video-js vjs-default-skin"
-      playsinline
-      autoplay
+      playsinline 
+      autoplay 
       muted
     ></video>
 
-    <!-- Floating Button to Toggle the Carousel -->
-    <button id="controlToggleBtn">Camera & Resolution</button>
+    <!-- CAMERA & RESOLUTION BUTTONS -->
+    <button id="cameraBtn" class="floatingBtn">Switch Camera</button>
+    <button id="resolutionBtn" class="floatingBtn">Switch Resolution</button>
 
-    <!-- Horizontal Carousel for Camera + Resolution Selection -->
-    <div id="carouselContainer"></div>
+    <!-- CAMERA DEVICES OVERLAY -->
+    <div id="cameraPanel" class="overlayPanel"></div>
+
+    <!-- RESOLUTIONS OVERLAY -->
+    <div id="resolutionPanel" class="overlayPanel"></div>
   </div>
 
-  <!-- Video.js JS (latest via CDN) -->
-  <script
+  <!-- Video.js JS (latest version via CDN) -->
+  <script 
     src="https://cdnjs.cloudflare.com/ajax/libs/video.js/8.4.0/video.min.js"
     integrity="sha512-/lgqE+NF1IemhKn2ld5oFascsMVlWH++6vxtMBlQcvPZlF7Nov4z3HxURmC8JIvh3i45s5rtr7xK4ryhpzbTvg=="
     crossorigin="anonymous"
-    referrerpolicy="no-referrer"
-  ></script>
+    referrerpolicy="no-referrer">
+  </script>
 
   <script>
     /****************************************************
-     * Global Variables
+     * GLOBALS
      ****************************************************/
-    let player;              // Video.js player instance
-    let currentStream;       // Current MediaStream
-    let availableDevices = [];// {deviceId, label, kind}
-    let availableResolutions = [
+    let player;             // Video.js instance
+    let currentStream;      // MediaStream currently playing
+    let selectedDeviceId;   // Current camera device ID
+    let selectedResolution = { width: 1280, height: 720 }; // Default
+    let availableDevices = []; // { deviceId, label, kind }
+
+    const cameraPanel = document.getElementById("cameraPanel");
+    const resolutionPanel = document.getElementById("resolutionPanel");
+
+    const availableResolutions = [
       { label: "480p", width: 640, height: 480 },
       { label: "720p", width: 1280, height: 720 },
       { label: "1080p", width: 1920, height: 1080 }
     ];
 
-    let selectedDeviceId = null;
-    let selectedResolution = { width: 1280, height: 720 }; // Default 720p
-
     /****************************************************
-     * On Page Load - Check Permissions
+     * PERMISSIONS CHECK ON LOAD
      ****************************************************/
     (async function checkPermissionsAndInit() {
-      console.log("[checkPermissionsAndInit] Checking camera permissions...");
+      console.log("[checkPermissionsAndInit] Checking for camera permission...");
       try {
-        // Attempt to get a stream to verify permission
+        // Attempt to get a simple video stream
         await navigator.mediaDevices.getUserMedia({ video: true });
-        console.log("[checkPermissionsAndInit] Permission already granted!");
-        // If successful, init the page
+        console.log("[checkPermissionsAndInit] Permission already granted.");
         initPage();
       } catch (error) {
-        console.warn("[checkPermissionsAndInit] Permission not granted or denied:", error);
-
-        // Ask for permission explicitly
+        console.warn("[checkPermissionsAndInit] Permission not granted:", error);
         try {
-          console.log("[checkPermissionsAndInit] Requesting permission now...");
+          console.log("[checkPermissionsAndInit] Requesting permission...");
           await navigator.mediaDevices.getUserMedia({ video: true });
-          alert("Permissions granted. The page will now refresh to set up the camera.");
-          location.reload(); // Reload the page after permission is granted
+          alert("Permissions granted. The page will now refresh to set up camera.");
+          location.reload();
         } catch (e) {
-          console.error("[checkPermissionsAndInit] User denied camera permission or error occurred:", e);
-          alert("Camera permission is required to display the video. Please enable it in your browser and refresh.");
+          console.error("[checkPermissionsAndInit] Camera permission denied or error:", e);
+          alert("Camera permission is required. Please allow it in your browser settings, then reload.");
         }
       }
     })();
 
     /****************************************************
-     * Initialize Page after Permissions
+     * INIT PAGE AFTER PERMISSION
      ****************************************************/
     async function initPage() {
       console.log("[initPage] Initializing page...");
-      // Enumerate devices
       await enumerateVideoDevices();
 
-      // Initialize Video.js
+      // Initialize the Video.js player
       player = videojs('myVideo', {
         autoplay: true,
         controls: false,
@@ -214,23 +229,37 @@
         fluid: false
       });
 
-      // Pick the first device as default if available
+      // Pick the first device by default
       if (availableDevices.length > 0) {
         selectedDeviceId = availableDevices[0].deviceId;
       }
 
-      // Start stream
-      await startStream();
+      // Start the stream
+      await startCameraStream();
 
-      // Build the carousel
-      buildCarousel();
-
-      // Setup FPS counter
+      // Set up the FPS counter
       setupFPSCounter();
+
+      // Build overlay for camera devices
+      buildCameraOverlay();
+
+      // Build overlay for resolutions
+      buildResolutionOverlay();
+
+      // Attach event listeners for toggling overlays
+      document.getElementById("cameraBtn").addEventListener("click", () => {
+        togglePanel(cameraPanel);
+        hidePanel(resolutionPanel); // hide resolution panel if open
+      });
+
+      document.getElementById("resolutionBtn").addEventListener("click", () => {
+        togglePanel(resolutionPanel);
+        hidePanel(cameraPanel); // hide camera panel if open
+      });
     }
 
     /****************************************************
-     * Enumerate Video Input Devices
+     * ENUMERATE VIDEO DEVICES
      ****************************************************/
     async function enumerateVideoDevices() {
       console.log("[enumerateVideoDevices] Enumerating devices...");
@@ -240,19 +269,19 @@
         .map(d => {
           return {
             deviceId: d.deviceId,
-            label: d.label || "Camera " + (Math.random() * 1000).toFixed(0),
+            label: d.label || "Camera " + Math.floor(Math.random() * 10000),
             kind: d.kind
           };
         });
-      console.log("[enumerateVideoDevices] Video input devices found:", availableDevices);
+      console.log("[enumerateVideoDevices] Found video devices:", availableDevices);
     }
 
     /****************************************************
-     * Start / Switch Camera Stream
+     * START CAMERA STREAM
      ****************************************************/
-    async function startStream() {
-      console.log("[startStream] Starting stream with device:", selectedDeviceId,
-                  " resolution:", selectedResolution.width + "x" + selectedResolution.height);
+    async function startCameraStream() {
+      console.log("[startCameraStream] Starting stream with device:", selectedDeviceId,
+                  " | resolution:", selectedResolution.width + "x" + selectedResolution.height);
 
       // Stop any existing stream
       if (currentStream) {
@@ -272,86 +301,75 @@
         currentStream = await navigator.mediaDevices.getUserMedia(constraints);
         player.srcObject = currentStream;
         player.play();
-        console.log("[startStream] Stream started successfully");
+        console.log("[startCameraStream] Stream started successfully!");
       } catch (err) {
-        console.error("[startStream] Error starting stream:", err);
-        alert("Could not start video stream. Check console for details or try a different camera/resolution.");
+        console.error("[startCameraStream] Error:", err);
+        alert("Failed to start camera. Try another device or resolution, or check console for errors.");
       }
     }
 
     /****************************************************
-     * Build Carousel (Devices + Resolutions)
+     * BUILD CAMERA OVERLAY
      ****************************************************/
-    function buildCarousel() {
-      console.log("[buildCarousel] Building carousel...");
-      const carouselContainer = document.getElementById("carouselContainer");
-      carouselContainer.innerHTML = "";
-
-      // -- Devices --
+    function buildCameraOverlay() {
+      cameraPanel.innerHTML = ""; // clear old items
       availableDevices.forEach(device => {
-        const deviceBtn = document.createElement("div");
-        deviceBtn.className = "carouselItem";
-        deviceBtn.textContent = device.label;
-        deviceBtn.onclick = async () => {
+        const btn = document.createElement("div");
+        btn.className = "optionBtn";
+        btn.textContent = device.label;
+        btn.onclick = async () => {
           selectedDeviceId = device.deviceId;
-          await startStream();
+          await startCameraStream();
+          hidePanel(cameraPanel);
         };
-        carouselContainer.appendChild(deviceBtn);
-      });
-
-      // Separator for clarity
-      const sep = document.createElement("div");
-      sep.className = "carouselItem";
-      sep.style.backgroundColor = "transparent";
-      sep.style.cursor = "default";
-      sep.style.minWidth = "1px";
-      sep.style.width = "1px";
-      sep.style.border = "none";
-      carouselContainer.appendChild(sep);
-
-      // -- Resolutions --
-      availableResolutions.forEach(res => {
-        const resolutionBtn = document.createElement("div");
-        resolutionBtn.className = "carouselItem";
-        resolutionBtn.textContent = res.label;
-        resolutionBtn.onclick = async () => {
-          selectedResolution = { width: res.width, height: res.height };
-          await startStream();
-        };
-        carouselContainer.appendChild(resolutionBtn);
+        cameraPanel.appendChild(btn);
       });
     }
 
     /****************************************************
-     * Toggle Carousel Visibility
+     * BUILD RESOLUTION OVERLAY
      ****************************************************/
-    const controlToggleBtn = document.getElementById("controlToggleBtn");
-    controlToggleBtn.addEventListener("click", () => {
-      const carouselContainer = document.getElementById("carouselContainer");
-      if (carouselContainer.style.display === "none" || carouselContainer.style.display === "") {
-        carouselContainer.style.display = "inline-block";
-      } else {
-        carouselContainer.style.display = "none";
-      }
-    });
+    function buildResolutionOverlay() {
+      resolutionPanel.innerHTML = "";
+      availableResolutions.forEach(res => {
+        const btn = document.createElement("div");
+        btn.className = "optionBtn";
+        btn.textContent = res.label;
+        btn.onclick = async () => {
+          selectedResolution = { width: res.width, height: res.height };
+          await startCameraStream();
+          hidePanel(resolutionPanel);
+        };
+        resolutionPanel.appendChild(btn);
+      });
+    }
 
     /****************************************************
-     * FPS Counter
+     * SHOW/HIDE HELPER FUNCTIONS FOR PANELS
+     ****************************************************/
+    function togglePanel(panel) {
+      panel.style.display = (panel.style.display === "none" || panel.style.display === "") 
+        ? "block" : "none";
+    }
+    function hidePanel(panel) {
+      panel.style.display = "none";
+    }
+
+    /****************************************************
+     * FPS COUNTER
      ****************************************************/
     function setupFPSCounter() {
-      console.log("[setupFPSCounter] Initializing FPS counter...");
       let lastFrameTime = performance.now();
       let frameCount = 0;
-      let fps = 0;
 
       function updateFPS(currentTime) {
         frameCount++;
         const delta = currentTime - lastFrameTime;
         if (delta >= 1000) {
-          fps = Math.round((frameCount * 1000) / delta);
+          const fps = Math.round((frameCount * 1000) / delta);
+          document.getElementById("fpsCounter").textContent = `FPS: ${fps}`;
           frameCount = 0;
           lastFrameTime = currentTime;
-          document.getElementById("fpsCounter").textContent = `FPS: ${fps}`;
         }
         requestAnimationFrame(updateFPS);
       }

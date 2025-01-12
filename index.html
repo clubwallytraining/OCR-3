@@ -317,12 +317,12 @@
                     videoStream.getTracks().forEach(track => track.stop());
                 }
 
-                // Define media constraints
+                // Define media constraints using 'ideal' instead of 'exact' for flexibility
                 const constraints = {
                     video: {
                         deviceId: deviceId ? { exact: deviceId } : undefined,
-                        width: { exact: resolution.width },
-                        height: { exact: resolution.height }
+                        width: { ideal: resolution.width },
+                        height: { ideal: resolution.height }
                     },
                     audio: false
                 };
@@ -349,14 +349,19 @@
              */
             async function initializeCamera() {
                 try {
-                    // Directly request camera access, which will prompt if not already granted
-                    videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                    // Request camera access to get device labels
+                    const initialStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                    // Stop the initial stream as we'll restart it with specific deviceId
+                    initialStream.getTracks().forEach(track => track.stop());
+
+                    // Enumerate devices after getting permission
                     await getVideoInputDevices();
                     if (videoInputDevices.length === 0) {
                         showError('No camera devices found.');
                         return;
                     }
-                    // Start video stream with the first available camera and default resolution
+
+                    // Select the default camera (first in the list)
                     currentCameraId = videoInputDevices[0].deviceId;
                     await startVideoStream(currentCameraId, currentResolution);
                 } catch (err) {
@@ -427,6 +432,8 @@
                         currentResolution = res;
                         await startVideoStream(currentCameraId, currentResolution);
                         closeModal('resolutionModal');
+                        // Update the button text to reflect the selected resolution
+                        document.getElementById('resolutionButton').textContent = `Resolution: ${res.label}`;
                     });
                     resolutionList.appendChild(li);
                 });

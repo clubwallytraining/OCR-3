@@ -6,7 +6,7 @@
     <title>Mobile Camera Stream with Video.js</title>
     
     <!-- Video.js CSS -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/video.js/8.0.0/video-js.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/video.js/9.0.0/video-js.min.css" rel="stylesheet">
     
     <!-- Custom Styles -->
     <style>
@@ -119,7 +119,7 @@
     <div id="errorMessage"></div>
 
     <!-- Video.js JS -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/video.js/8.0.0/video.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/video.js/9.0.0/video.min.js"></script>
     
     <!-- Custom Scripts -->
     <script>
@@ -159,13 +159,17 @@
              * @param {MediaStream} stream - The media stream to display
              */
             function initializeVideoPlayer(stream) {
-                // Initialize Video.js player
+                if (videoPlayer) {
+                    videoPlayer.dispose(); // Dispose existing player if any
+                }
+
+                // Initialize Video.js player with the MediaStream directly
                 videoPlayer = videojs('myVideo', {
                     autoplay: true,
                     controls: false,
                     sources: [{
                         src: URL.createObjectURL(stream),
-                        type: 'video/webm' // Use appropriate type
+                        type: stream.getVideoTracks()[0].getSettings().width ? 'video/mp4' : 'video/webm' // Dynamically set type
                     }],
                     fluid: true,
                     preload: 'auto'
@@ -173,7 +177,9 @@
 
                 // Enable hardware acceleration via CSS
                 const videoElement = document.getElementById('myVideo_html5_api');
-                videoElement.style.transform = 'translateZ(0)';
+                if (videoElement) {
+                    videoElement.style.transform = 'translateZ(0)';
+                }
 
                 // Start FPS monitoring
                 requestAnimationFrame(updateFPS);
@@ -240,41 +246,27 @@
             }
 
             /**
-             * Prompt user for camera access and initialize stream
+             * Initialize the camera by requesting permissions and starting the stream
              */
             async function initializeCamera() {
                 try {
-                    // Check for camera permissions
-                    const permissionStatus = await navigator.permissions.query({ name: 'camera' });
-                    if (permissionStatus.state === 'granted') {
-                        // Permissions already granted, start stream
-                        await getVideoInputDevices();
-                        if (videoInputDevices.length === 0) {
-                            showError('No camera devices found.');
-                            return;
-                        }
-                        await startVideoStream(videoInputDevices[currentCameraIndex].deviceId, resolutions[currentResolutionIndex]);
-                    } else if (permissionStatus.state === 'prompt') {
-                        // Request camera access
-                        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-                        // Permissions granted, refresh to start stream
-                        stream.getTracks().forEach(track => track.stop());
-                        location.reload();
-                    } else {
-                        // Permissions denied
-                        showError('Camera access denied. Please allow camera permissions to use this feature.');
+                    // Directly request camera access, which will prompt if not already granted
+                    videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                    await getVideoInputDevices();
+                    if (videoInputDevices.length === 0) {
+                        showError('No camera devices found.');
+                        return;
                     }
-
-                    // Listen for permission changes
-                    permissionStatus.onchange = async () => {
-                        if (permissionStatus.state === 'granted') {
-                            location.reload();
-                        } else if (permissionStatus.state === 'denied') {
-                            showError('Camera access denied. Please allow camera permissions to use this feature.');
-                        }
-                    };
+                    // Start video stream with the first available camera and default resolution
+                    await startVideoStream(videoInputDevices[currentCameraIndex].deviceId, resolutions[currentResolutionIndex]);
                 } catch (err) {
-                    showError('Unable to access the camera.');
+                    if (err.name === 'NotAllowedError') {
+                        showError('Camera access denied. Please allow camera permissions to use this feature.');
+                    } else if (err.name === 'NotFoundError') {
+                        showError('No camera devices found.');
+                    } else {
+                        showError('Unable to access the camera.');
+                    }
                     console.error(err);
                 }
             }
@@ -292,7 +284,7 @@
                     // Toggle between available cameras
                     currentCameraIndex = (currentCameraIndex + 1) % videoInputDevices.length;
                     await startVideoStream(videoInputDevices[currentCameraIndex].deviceId, resolutions[currentResolutionIndex]);
-                };
+                });
             }
 
             /**

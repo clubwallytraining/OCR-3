@@ -1,325 +1,197 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mobile Camera Stream</title>
-    <!-- Video.js CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/video.js@latest/dist/video-js.min.css" rel="stylesheet">
-    <!-- Font Awesome for Icons -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <title>Video.js Camera Stream</title>
+    <!-- Link Video.js CSS -->
+    <link href="https://vjs.zencdn.net/8.4.0/video-js.css" rel="stylesheet">
+    <!-- Link Material Icons for Buttons -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
-        /* Dark Theme */
         body {
             margin: 0;
             padding: 0;
             background-color: #121212;
-            color: #ffffff;
+            color: white;
             font-family: Arial, sans-serif;
-            height: 100vh;
             overflow: hidden;
+        }
+
+        #video-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
             position: relative;
         }
 
-        /* Video Container */
-        .video-container {
-            position: relative;
-            width: 100%;
-            height: 100%;
-        }
-
-        /* Video.js Player */
         .video-js {
             width: 100%;
             height: 100%;
-            background-color: #000;
         }
 
-        /* Floating Controls Button */
-        .controls-button {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            background-color: rgba(30, 30, 30, 0.8);
-            border: none;
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            color: #ffffff;
-            font-size: 24px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10;
-            transition: background-color 0.3s;
-        }
-
-        .controls-button:hover {
-            background-color: rgba(50, 50, 50, 0.8);
-        }
-
-        /* Control Panel */
-        .control-panel {
-            position: absolute;
-            bottom: 90px;
-            right: 20px;
-            background-color: rgba(30, 30, 30, 0.9);
-            border-radius: 10px;
-            padding: 10px;
-            display: none;
-            flex-direction: column;
-            z-index: 10;
-        }
-
-        /* Carousel for Controls */
-        .carousel {
-            display: flex;
-            overflow-x: auto;
-            gap: 10px;
-        }
-
-        .carousel::-webkit-scrollbar {
-            display: none;
-        }
-
-        /* Control Buttons */
-        .control-item {
-            background-color: rgba(50, 50, 50, 0.8);
-            border: none;
-            border-radius: 20px;
-            padding: 10px 20px;
-            color: #ffffff;
-            cursor: pointer;
-            white-space: nowrap;
-            flex: 0 0 auto;
-            transition: background-color 0.3s;
-        }
-
-        .control-item:hover {
-            background-color: rgba(70, 70, 70, 0.8);
-        }
-
-        /* FPS Counter */
-        .fps-counter {
+        #fps-counter {
             position: absolute;
             top: 10px;
             left: 10px;
-            background-color: rgba(0, 0, 0, 0.6);
-            color: #ffffff;
-            padding: 5px 10px;
-            border-radius: 5px;
-            font-size: 14px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+            font-size: 16px;
+            color: white;
+            text-shadow: 0px 0px 5px rgba(0, 0, 0, 0.8);
             z-index: 10;
         }
 
-        /* Ensure Hardware Acceleration */
-        video, .video-js {
-            transform: translateZ(0);
-            will-change: transform;
+        .controls-carousel {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 10;
+        }
+
+        .control-button {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.5);
+            transition: background-color 0.3s;
+        }
+
+        .control-button:hover {
+            background-color: rgba(255, 255, 255, 0.3);
         }
     </style>
 </head>
+
 <body>
-    <div class="video-container">
-        <video
-            id="my-video"
-            class="video-js vjs-default-skin"
-            playsinline
-            autoplay
-            muted
-            preload="auto"
-        ></video>
-
-        <!-- FPS Counter -->
-        <div id="fpsCounter" class="fps-counter">FPS: 0</div>
-
-        <!-- Floating Controls Button -->
-        <button id="toggleControls" class="controls-button">
-            <i class="fas fa-cog"></i>
-        </button>
-
-        <!-- Control Panel -->
-        <div id="controlPanel" class="control-panel">
-            <div class="carousel" id="controlsCarousel">
-                <!-- Camera Selection -->
-                <button class="control-item" id="switchCamera">
-                    <i class="fas fa-camera"></i> Switch Camera
-                </button>
-                <!-- Resolution Selection -->
-                <button class="control-item" id="changeResolution">
-                    <i class="fas fa-video"></i> Resolution
-                </button>
-            </div>
+    <div id="video-container">
+        <div id="fps-counter">FPS: 0</div>
+        <video-js id="cameraStream" class="video-js vjs-default-skin" autoplay playsinline></video-js>
+        <div class="controls-carousel">
+            <button class="control-button" id="cameraSelection">Camera</button>
+            <button class="control-button" id="resolutionSelection">Resolution</button>
         </div>
     </div>
 
-    <!-- Video.js JS -->
-    <script src="https://cdn.jsdelivr.net/npm/video.js@latest/dist/video.min.js"></script>
-    <!-- Stats.js for FPS Counter -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/stats.js/r17/Stats.min.js"></script>
-    <!-- Font Awesome JS -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <!-- Link Video.js JS -->
+    <script src="https://vjs.zencdn.net/8.4.0/video.min.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', async () => {
-            const videoElement = document.getElementById('my-video');
-            const toggleControlsBtn = document.getElementById('toggleControls');
-            const controlPanel = document.getElementById('controlPanel');
-            const switchCameraBtn = document.getElementById('switchCamera');
-            const changeResolutionBtn = document.getElementById('changeResolution');
-            const fpsCounter = document.getElementById('fpsCounter');
+        const fpsCounter = document.getElementById('fps-counter');
+        const videoElement = document.querySelector('#cameraStream video');
+        const cameraButton = document.getElementById('cameraSelection');
+        const resolutionButton = document.getElementById('resolutionSelection');
+        let currentStream = null;
+        let fps = 0;
 
-            let currentStream = null;
-            let currentDeviceId = null;
-            let availableDevices = [];
-            let currentResolution = { width: 1280, height: 720 };
-            let stats;
+        // Start FPS counter
+        function startFPSCounter() {
+            setInterval(() => {
+                fpsCounter.innerText = `FPS: ${fps}`;
+            }, 1000);
+        }
 
-            // Initialize Stats.js for FPS
-            function initStats() {
-                stats = new Stats();
-                stats.showPanel(0); // 0: fps
-                document.body.appendChild(stats.dom);
-                // Position the stats counter
-                stats.dom.style.position = 'absolute';
-                stats.dom.style.top = '10px';
-                stats.dom.style.left = '10px';
-                stats.dom.style.zIndex = '1000';
-                // Hide the default stats counter
-                stats.dom.style.display = 'none';
-            }
-
-            // Update FPS Counter
-            function updateFPS() {
-                if (stats) {
-                    stats.begin();
-                    stats.end();
-                    const fps = Math.round(stats.getFPS());
-                    fpsCounter.textContent = `FPS: ${fps}`;
-                }
-                requestAnimationFrame(updateFPS);
-            }
-
-            // Check Camera Permissions
-            async function checkPermissions() {
-                try {
-                    const permission = await navigator.permissions.query({ name: 'camera' });
-                    if (permission.state === 'granted') {
-                        return true;
-                    } else if (permission.state === 'prompt') {
-                        await getMediaStream();
-                        return true;
-                    } else {
-                        alert('Camera access is denied. Please enable it in your browser settings.');
-                        return false;
-                    }
-                } catch (error) {
-                    console.error('Permission API error:', error);
-                    // Fallback to getUserMedia
-                    try {
-                        await getMediaStream();
-                        return true;
-                    } catch (err) {
-                        alert('Unable to access camera.');
-                        return false;
-                    }
-                }
-            }
-
-            // Get Media Stream
-            async function getMediaStream() {
-                const constraints = {
-                    video: {
-                        width: { ideal: currentResolution.width },
-                        height: { ideal: currentResolution.height },
-                        facingMode: 'user',
-                        deviceId: currentDeviceId ? { exact: currentDeviceId } : undefined
-                    },
-                    audio: false
-                };
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                currentStream = stream;
-                videoElement.srcObject = stream;
-                return stream;
-            }
-
-            // Enumerate Devices
-            async function enumerateDevices() {
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                availableDevices = devices.filter(device => device.kind === 'videoinput');
-            }
-
-            // Switch Camera
-            async function switchCamera() {
-                if (availableDevices.length < 2) {
-                    alert('No alternative cameras found.');
-                    return;
-                }
-                const currentIndex = availableDevices.findIndex(device => device.deviceId === currentDeviceId);
-                const nextIndex = (currentIndex + 1) % availableDevices.length;
-                currentDeviceId = availableDevices[nextIndex].deviceId;
-                await restartStream();
-            }
-
-            // Change Resolution
-            async function changeResolution() {
-                const resolutions = [
-                    { width: 640, height: 480 },
-                    { width: 1280, height: 720 },
-                    { width: 1920, height: 1080 }
-                ];
-                const currentIndex = resolutions.findIndex(res => res.width === currentResolution.width && res.height === currentResolution.height);
-                const nextIndex = (currentIndex + 1) % resolutions.length;
-                currentResolution = resolutions[nextIndex];
-                await restartStream();
-            }
-
-            // Restart Stream with New Settings
-            async function restartStream() {
+        // Access the camera and stream video
+        async function startCamera(selectedDeviceId, resolution = { width: 1280, height: 720 }) {
+            try {
                 if (currentStream) {
                     currentStream.getTracks().forEach(track => track.stop());
                 }
-                await getMediaStream();
-            }
 
-            // Initialize Video.js Player
-            function initializeVideoJS() {
-                const player = videojs('my-video', {
-                    autoplay: true,
-                    controls: false,
-                    fluid: true,
-                    liveui: true,
-                    techOrder: ["html5"],
-                    html5: {
-                        nativeControlsForTouch: false
+                const constraints = {
+                    video: {
+                        deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
+                        width: resolution.width,
+                        height: resolution.height,
+                        frameRate: { ideal: 30, max: 60 }
                     }
-                });
+                };
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                currentStream = stream;
+
+                // Attach stream to Video.js
+                videoElement.srcObject = stream;
+                videoElement.play();
+            } catch (error) {
+                console.error('Error accessing the camera: ', error);
             }
+        }
 
-            // Initialize Controls
-            function initializeControls() {
-                toggleControlsBtn.addEventListener('click', () => {
-                    controlPanel.style.display = controlPanel.style.display === 'flex' ? 'none' : 'flex';
-                });
-
-                switchCameraBtn.addEventListener('click', switchCamera);
-                changeResolutionBtn.addEventListener('click', changeResolution);
+        // Check for camera permissions and request if not granted
+        async function checkPermissions() {
+            const permissions = await navigator.permissions.query({ name: 'camera' });
+            if (permissions.state === 'denied') {
+                alert('Camera access denied. Please enable it in your browser settings.');
+                return false;
+            } else if (permissions.state === 'prompt') {
+                await navigator.mediaDevices.getUserMedia({ video: true });
+                location.reload();
+                return false;
             }
+            return true;
+        }
 
-            // Initialize Everything
-            async function init() {
-                initStats();
-                await checkPermissions();
-                await enumerateDevices();
-                initializeVideoJS();
-                initializeControls();
-                updateFPS();
+        // Get available cameras
+        async function getCameras() {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            return devices.filter(device => device.kind === 'videoinput');
+        }
+
+        // Handle camera selection
+        async function handleCameraSelection() {
+            const cameras = await getCameras();
+            const cameraNames = cameras.map(camera => camera.label || `Camera ${cameras.indexOf(camera) + 1}`);
+            const selected = prompt(`Select a camera:\n${cameraNames.join('\n')}`);
+            const cameraIndex = parseInt(selected) - 1;
+            if (cameraIndex >= 0 && cameraIndex < cameras.length) {
+                startCamera(cameras[cameraIndex].deviceId);
             }
+        }
 
-            // Start Initialization
-            init();
-        });
+        // Handle resolution selection
+        function handleResolutionSelection() {
+            const resolutions = [
+                { label: '720p', width: 1280, height: 720 },
+                { label: '1080p', width: 1920, height: 1080 },
+                { label: '4K', width: 3840, height: 2160 }
+            ];
+            const selected = prompt(
+                `Select a resolution:\n${resolutions
+                    .map((res, index) => `${index + 1}: ${res.label}`)
+                    .join('\n')}`
+            );
+            const resolutionIndex = parseInt(selected) - 1;
+            if (resolutionIndex >= 0 && resolutionIndex < resolutions.length) {
+                const resolution = resolutions[resolutionIndex];
+                startCamera(undefined, resolution);
+            }
+        }
+
+        // Attach event listeners to buttons
+        cameraButton.addEventListener('click', handleCameraSelection);
+        resolutionButton.addEventListener('click', handleResolutionSelection);
+
+        // Initialize page
+        async function init() {
+            const permissionsGranted = await checkPermissions();
+            if (permissionsGranted) {
+                startCamera();
+                startFPSCounter();
+            }
+        }
+
+        init();
     </script>
 </body>
+
 </html>

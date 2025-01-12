@@ -1,197 +1,320 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video.js Camera Stream</title>
-    <!-- Link Video.js CSS -->
-    <link href="https://vjs.zencdn.net/8.4.0/video-js.css" rel="stylesheet">
-    <!-- Link Material Icons for Buttons -->
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <title>Mobile Camera Stream with Video.js</title>
+    
+    <!-- Video.js CSS -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/video.js/8.0.0/video-js.min.css" rel="stylesheet">
+    
+    <!-- Custom Styles -->
     <style>
+        /* Apply dark theme */
         body {
             margin: 0;
             padding: 0;
             background-color: #121212;
-            color: white;
+            color: #ffffff;
             font-family: Arial, sans-serif;
-            overflow: hidden;
-        }
-
-        #video-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
             height: 100vh;
+            overflow: hidden;
             position: relative;
         }
 
+        /* Video.js player styling */
         .video-js {
             width: 100%;
             height: 100%;
+            object-fit: cover; /* Ensure video covers the entire viewport */
         }
 
-        #fps-counter {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            font-size: 16px;
-            color: white;
-            text-shadow: 0px 0px 5px rgba(0, 0, 0, 0.8);
-            z-index: 10;
-        }
-
-        .controls-carousel {
-            position: absolute;
+        /* Floating buttons container */
+        .controls-container {
+            position: fixed;
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
             display: flex;
-            gap: 10px;
-            z-index: 10;
+            overflow-x: auto;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 30px;
         }
 
+        /* Hide scrollbar for WebKit browsers */
+        .controls-container::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* Button styling */
         .control-button {
-            background-color: rgba(255, 255, 255, 0.1);
-            color: white;
+            flex: 0 0 auto;
+            margin: 0 10px;
+            padding: 15px 20px;
+            background-color: #1f1f1f;
             border: none;
             border-radius: 50px;
-            padding: 10px 20px;
+            color: #ffffff;
+            font-size: 16px;
             cursor: pointer;
-            font-size: 14px;
+            transition: background-color 0.3s, transform 0.3s;
             display: flex;
             align-items: center;
-            justify-content: center;
-            box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.5);
-            transition: background-color 0.3s;
         }
 
+        /* Hover effect for buttons */
         .control-button:hover {
-            background-color: rgba(255, 255, 255, 0.3);
+            background-color: #333333;
+            transform: scale(1.05);
+        }
+
+        /* FPS Counter styling */
+        #fpsCounter {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            color: #ffffff;
+            font-size: 18px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+        }
+
+        /* Error message styling */
+        #errorMessage {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 0, 0, 0.8);
+            padding: 20px 30px;
+            border-radius: 10px;
+            color: #ffffff;
+            font-size: 18px;
+            display: none; /* Hidden by default */
+            z-index: 1001;
         }
     </style>
 </head>
-
 <body>
-    <div id="video-container">
-        <div id="fps-counter">FPS: 0</div>
-        <video-js id="cameraStream" class="video-js vjs-default-skin" autoplay playsinline></video-js>
-        <div class="controls-carousel">
-            <button class="control-button" id="cameraSelection">Camera</button>
-            <button class="control-button" id="resolutionSelection">Resolution</button>
-        </div>
+    <!-- FPS Counter -->
+    <div id="fpsCounter">FPS: 0</div>
+
+    <!-- Video.js Player -->
+    <video
+        id="myVideo"
+        class="video-js vjs-default-skin"
+        playsinline
+        autoplay
+        muted
+    ></video>
+
+    <!-- Controls Carousel -->
+    <div class="controls-container">
+        <button id="cameraButton" class="control-button">Camera</button>
+        <button id="resolutionButton" class="control-button">Resolution</button>
     </div>
 
-    <!-- Link Video.js JS -->
-    <script src="https://vjs.zencdn.net/8.4.0/video.min.js"></script>
+    <!-- Error Message -->
+    <div id="errorMessage"></div>
+
+    <!-- Video.js JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/video.js/8.0.0/video.min.js"></script>
+    
+    <!-- Custom Scripts -->
     <script>
-        const fpsCounter = document.getElementById('fps-counter');
-        const videoElement = document.querySelector('#cameraStream video');
-        const cameraButton = document.getElementById('cameraSelection');
-        const resolutionButton = document.getElementById('resolutionSelection');
-        let currentStream = null;
-        let fps = 0;
+        // Ensure the script runs after the DOM is fully loaded
+        document.addEventListener('DOMContentLoaded', async () => {
+            const fpsCounter = document.getElementById('fpsCounter');
+            const errorMessage = document.getElementById('errorMessage');
+            let videoStream = null;
+            let videoPlayer = null;
+            let fps = 0;
+            let lastFrameTime = performance.now();
+            let frameCount = 0;
 
-        // Start FPS counter
-        function startFPSCounter() {
-            setInterval(() => {
-                fpsCounter.innerText = `FPS: ${fps}`;
-            }, 1000);
-        }
-
-        // Access the camera and stream video
-        async function startCamera(selectedDeviceId, resolution = { width: 1280, height: 720 }) {
-            try {
-                if (currentStream) {
-                    currentStream.getTracks().forEach(track => track.stop());
-                }
-
-                const constraints = {
-                    video: {
-                        deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
-                        width: resolution.width,
-                        height: resolution.height,
-                        frameRate: { ideal: 30, max: 60 }
-                    }
-                };
-
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                currentStream = stream;
-
-                // Attach stream to Video.js
-                videoElement.srcObject = stream;
-                videoElement.play();
-            } catch (error) {
-                console.error('Error accessing the camera: ', error);
-            }
-        }
-
-        // Check for camera permissions and request if not granted
-        async function checkPermissions() {
-            const permissions = await navigator.permissions.query({ name: 'camera' });
-            if (permissions.state === 'denied') {
-                alert('Camera access denied. Please enable it in your browser settings.');
-                return false;
-            } else if (permissions.state === 'prompt') {
-                await navigator.mediaDevices.getUserMedia({ video: true });
-                location.reload();
-                return false;
-            }
-            return true;
-        }
-
-        // Get available cameras
-        async function getCameras() {
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            return devices.filter(device => device.kind === 'videoinput');
-        }
-
-        // Handle camera selection
-        async function handleCameraSelection() {
-            const cameras = await getCameras();
-            const cameraNames = cameras.map(camera => camera.label || `Camera ${cameras.indexOf(camera) + 1}`);
-            const selected = prompt(`Select a camera:\n${cameraNames.join('\n')}`);
-            const cameraIndex = parseInt(selected) - 1;
-            if (cameraIndex >= 0 && cameraIndex < cameras.length) {
-                startCamera(cameras[cameraIndex].deviceId);
-            }
-        }
-
-        // Handle resolution selection
-        function handleResolutionSelection() {
+            // Predefined resolutions
             const resolutions = [
                 { label: '720p', width: 1280, height: 720 },
                 { label: '1080p', width: 1920, height: 1080 },
                 { label: '4K', width: 3840, height: 2160 }
             ];
-            const selected = prompt(
-                `Select a resolution:\n${resolutions
-                    .map((res, index) => `${index + 1}: ${res.label}`)
-                    .join('\n')}`
-            );
-            const resolutionIndex = parseInt(selected) - 1;
-            if (resolutionIndex >= 0 && resolutionIndex < resolutions.length) {
-                const resolution = resolutions[resolutionIndex];
-                startCamera(undefined, resolution);
+            let currentResolutionIndex = 0;
+
+            // Available video input devices
+            let videoInputDevices = [];
+            let currentCameraIndex = 0;
+
+            /**
+             * Display error messages to the user
+             * @param {string} message - The error message to display
+             */
+            function showError(message) {
+                errorMessage.textContent = message;
+                errorMessage.style.display = 'block';
             }
-        }
 
-        // Attach event listeners to buttons
-        cameraButton.addEventListener('click', handleCameraSelection);
-        resolutionButton.addEventListener('click', handleResolutionSelection);
+            /**
+             * Initialize the Video.js player with the given stream
+             * @param {MediaStream} stream - The media stream to display
+             */
+            function initializeVideoPlayer(stream) {
+                // Initialize Video.js player
+                videoPlayer = videojs('myVideo', {
+                    autoplay: true,
+                    controls: false,
+                    sources: [{
+                        src: URL.createObjectURL(stream),
+                        type: 'video/webm' // Use appropriate type
+                    }],
+                    fluid: true,
+                    preload: 'auto'
+                });
 
-        // Initialize page
-        async function init() {
-            const permissionsGranted = await checkPermissions();
-            if (permissionsGranted) {
-                startCamera();
-                startFPSCounter();
+                // Enable hardware acceleration via CSS
+                const videoElement = document.getElementById('myVideo_html5_api');
+                videoElement.style.transform = 'translateZ(0)';
+
+                // Start FPS monitoring
+                requestAnimationFrame(updateFPS);
             }
-        }
 
-        init();
+            /**
+             * Update the FPS counter
+             */
+            function updateFPS() {
+                const now = performance.now();
+                frameCount++;
+                const delta = now - lastFrameTime;
+                if (delta >= 1000) { // Update every second
+                    fps = frameCount;
+                    frameCount = 0;
+                    lastFrameTime = now;
+                    fpsCounter.textContent = `FPS: ${fps}`;
+                }
+                requestAnimationFrame(updateFPS);
+            }
+
+            /**
+             * Get list of available video input devices
+             */
+            async function getVideoInputDevices() {
+                try {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    videoInputDevices = devices.filter(device => device.kind === 'videoinput');
+                } catch (err) {
+                    showError('Error accessing media devices.');
+                    console.error(err);
+                }
+            }
+
+            /**
+             * Start the video stream with given constraints
+             * @param {string} deviceId - The device ID of the camera to use
+             * @param {object} resolution - The resolution constraints
+             */
+            async function startVideoStream(deviceId, resolution) {
+                // Stop any existing streams
+                if (videoStream) {
+                    videoStream.getTracks().forEach(track => track.stop());
+                }
+
+                // Define media constraints
+                const constraints = {
+                    video: {
+                        deviceId: deviceId ? { exact: deviceId } : undefined,
+                        width: { exact: resolution.width },
+                        height: { exact: resolution.height }
+                    },
+                    audio: false
+                };
+
+                try {
+                    // Request media stream with constraints
+                    videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+                    initializeVideoPlayer(videoStream);
+                } catch (err) {
+                    showError('Error accessing the camera with the selected settings.');
+                    console.error(err);
+                }
+            }
+
+            /**
+             * Prompt user for camera access and initialize stream
+             */
+            async function initializeCamera() {
+                try {
+                    // Check for camera permissions
+                    const permissionStatus = await navigator.permissions.query({ name: 'camera' });
+                    if (permissionStatus.state === 'granted') {
+                        // Permissions already granted, start stream
+                        await getVideoInputDevices();
+                        if (videoInputDevices.length === 0) {
+                            showError('No camera devices found.');
+                            return;
+                        }
+                        await startVideoStream(videoInputDevices[currentCameraIndex].deviceId, resolutions[currentResolutionIndex]);
+                    } else if (permissionStatus.state === 'prompt') {
+                        // Request camera access
+                        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                        // Permissions granted, refresh to start stream
+                        stream.getTracks().forEach(track => track.stop());
+                        location.reload();
+                    } else {
+                        // Permissions denied
+                        showError('Camera access denied. Please allow camera permissions to use this feature.');
+                    }
+
+                    // Listen for permission changes
+                    permissionStatus.onchange = async () => {
+                        if (permissionStatus.state === 'granted') {
+                            location.reload();
+                        } else if (permissionStatus.state === 'denied') {
+                            showError('Camera access denied. Please allow camera permissions to use this feature.');
+                        }
+                    };
+                } catch (err) {
+                    showError('Unable to access the camera.');
+                    console.error(err);
+                }
+            }
+
+            /**
+             * Populate and handle the Camera selection button
+             */
+            function setupCameraButton() {
+                const cameraButton = document.getElementById('cameraButton');
+                cameraButton.addEventListener('click', async () => {
+                    if (videoInputDevices.length < 2) {
+                        alert('Only one camera detected.');
+                        return;
+                    }
+                    // Toggle between available cameras
+                    currentCameraIndex = (currentCameraIndex + 1) % videoInputDevices.length;
+                    await startVideoStream(videoInputDevices[currentCameraIndex].deviceId, resolutions[currentResolutionIndex]);
+                };
+            }
+
+            /**
+             * Populate and handle the Resolution selection button
+             */
+            function setupResolutionButton() {
+                const resolutionButton = document.getElementById('resolutionButton');
+                resolutionButton.addEventListener('click', async () => {
+                    // Cycle through predefined resolutions
+                    currentResolutionIndex = (currentResolutionIndex + 1) % resolutions.length;
+                    await startVideoStream(videoInputDevices[currentCameraIndex].deviceId, resolutions[currentResolutionIndex]);
+                    resolutionButton.textContent = `Resolution: ${resolutions[currentResolutionIndex].label}`;
+                });
+                // Initialize button text
+                resolutionButton.textContent = `Resolution: ${resolutions[currentResolutionIndex].label}`;
+            }
+
+            // Initialize the application
+            await initializeCamera();
+            setupCameraButton();
+            setupResolutionButton();
+        });
     </script>
 </body>
-
 </html>

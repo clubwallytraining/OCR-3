@@ -436,14 +436,9 @@
         
         // Function to detect device orientation
         const getDeviceOrientation = () => {
-          if (window.matchMedia("(orientation: portrait)").matches) {
-            return 'portrait';
-          }
-          if (window.matchMedia("(orientation: landscape)").matches) {
-            return 'landscape';
-          }
-          // Fallback
-          return 'portrait';
+          const orientation = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+          console.log(`Detected orientation based on window dimensions: ${orientation}`);
+          return orientation;
         };
         
         // Function to set default resolution based on orientation
@@ -458,7 +453,7 @@
           });
           currentResolution = defaultRes || { width: 1280, height: 720 }; // Fallback to 720p Landscape
           updateOrientationIndicator(orientation);
-          console.log(`Detected Orientation: ${orientation}`);
+          console.log(`Set default resolution to: ${currentResolution.label}`);
         };
         
         const initializeVideoJS = () => {
@@ -469,18 +464,21 @@
               controls: false,
               fluid: true
             });
+            console.log('Video.js initialized.');
           }
         };
         
         const resizeVideo = () => {
           // Let the video element handle sizing with object-fit: cover
           // This function can be used for additional custom resizing if needed
+          console.log('Window resized.');
         };
         
         const getCameras = async () => {
           try {
             const devices = await navigator.mediaDevices.enumerateDevices();
             cameras = devices.filter(device => device.kind === 'videoinput');
+            console.log(`Found ${cameras.length} camera(s).`);
             if (cameras.length === 0) {
               alert('No cameras found on this device.');
             }
@@ -495,6 +493,7 @@
           Modal.show(message, [
             { label: 'OK', onClick: Modal.close }
           ]);
+          console.log(message);
         };
         
         const updateOrientationIndicator = (orientation) => {
@@ -506,6 +505,7 @@
           } else {
             orientationCircle.style.backgroundColor = 'gray';
           }
+          console.log(`Orientation Indicator updated to: ${orientation}`);
         };
         
         const startStream = async () => {
@@ -527,8 +527,8 @@
               video: {
                 deviceId: cameras[currentCameraIndex]?.deviceId ? { exact: cameras[currentCameraIndex].deviceId } : undefined,
                 facingMode: 'environment',
-                width: { exact: currentResolution.width },
-                height: { exact: currentResolution.height },
+                width: { ideal: currentResolution.width },
+                height: { ideal: currentResolution.height },
                 frameRate: { ideal: 120, max: 120 }
               }
             };
@@ -539,6 +539,7 @@
             // Assign the stream to the video element before initializing Video.js
             videoElement.srcObject = currentStream;
             await videoElement.play();
+            console.log('Stream started and video playing.');
             
             // Initialize Video.js once
             initializeVideoJS();
@@ -555,6 +556,7 @@
               Modal.show(`Requested resolution ${currentResolution.width}x${currentResolution.height} not supported. Using ${settings.width}x${settings.height} instead.`, [
                 { label: 'OK', onClick: Modal.close }
               ]);
+              console.warn(`Resolution mismatch: Requested ${currentResolution.width}x${currentResolution.height}, Got ${settings.width}x${settings.height}`);
             }
           } catch (error) {
             console.error('Error initializing video stream:', error);
@@ -587,6 +589,7 @@
               currentCameraIndex = index;
               Modal.close();
               startStream();
+              console.log(`Switched to camera index: ${currentCameraIndex}`);
             }
           }));
           
@@ -600,6 +603,7 @@
               currentResolution = { width: res.width, height: res.height };
               Modal.close();
               await startStream();
+              console.log(`Switched to resolution: ${currentResolution.label}`);
             }
           }));
           
@@ -614,7 +618,7 @@
         };
         
         const handleOrientationChange = () => {
-          console.log('Orientation changed. Restarting stream with new resolution.');
+          console.log('Orientation change detected.');
           setDefaultResolution();
           startStream();
         };
@@ -627,6 +631,7 @@
           window.addEventListener('orientationchange', handleOrientationChange);
           navigator.mediaDevices.addEventListener('devicechange', async () => {
             await getCameras();
+            console.log('Device change detected.');
           });
         };
         

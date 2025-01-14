@@ -375,17 +375,9 @@
         let isChangingStream = false;
         let debounceTimeout;
         let player = null;
-        let currentOrientation = getOrientation(); // 'portrait' or 'landscape'
+        let currentOrientation = 'landscape';
+        let availableResolutions = [];
         let currentResolution = null;
-        
-        // Define resolutions for portrait and landscape
-        const portraitResolutions = [
-          { label: '480x640', width: 480, height: 640 },
-          { label: '720x1280', width: 720, height: 1280 },
-          { label: '1080x1920', width: 1080, height: 1920 },
-          { label: '1440x2560', width: 1440, height: 2560 },
-          { label: '2160x3840', width: 2160, height: 3840 }
-        ];
         
         const landscapeResolutions = [
           { label: '640x480', width: 640, height: 480 },
@@ -393,6 +385,14 @@
           { label: '1920x1080', width: 1920, height: 1080 },
           { label: '2560x1440', width: 2560, height: 1440 },
           { label: '3840x2160', width: 3840, height: 2160 }
+        ];
+        
+        const portraitResolutions = [
+          { label: '480x640', width: 480, height: 640 },
+          { label: '720x1280', width: 720, height: 1280 },
+          { label: '1080x1920', width: 1080, height: 1920 },
+          { label: '1440x2560', width: 1440, height: 2560 },
+          { label: '2160x3840', width: 2160, height: 3840 }
         ];
         
         const initializeVideoJS = () => {
@@ -426,8 +426,7 @@
         
         const getSupportedResolutions = async () => {
           const supportedResolutions = [];
-          const resolutionsToCheck = currentOrientation === 'portrait' ? portraitResolutions : landscapeResolutions;
-          for (const res of resolutionsToCheck) {
+          for (const res of availableResolutions) {
             try {
               const testConstraints = {
                 video: {
@@ -468,22 +467,12 @@
               currentStream.getTracks().forEach(track => track.stop());
             }
             
-            // If no resolution is set, choose the first supported resolution
-            if (!currentResolution) {
-              const supportedRes = await getSupportedResolutions();
-              if (supportedRes.length > 0) {
-                currentResolution = supportedRes[0];
-              } else {
-                throw new Error('No supported resolutions found.');
-              }
-            }
-            
             const constraints = {
               video: {
                 deviceId: cameras[currentCameraIndex]?.deviceId ? { exact: cameras[currentCameraIndex].deviceId } : undefined,
                 facingMode: 'environment',
-                width: { exact: currentResolution.width },
-                height: { exact: currentResolution.height },
+                width: { ideal: currentResolution.width },
+                height: { ideal: currentResolution.height },
                 frameRate: { ideal: 120, max: 120 } // Retained original frame rate constraints
               }
             };
@@ -510,8 +499,6 @@
               Modal.show(`Requested resolution ${currentResolution.width}x${currentResolution.height} not supported. Using ${settings.width}x${settings.height} instead.`, [
                 { label: 'OK', onClick: Modal.close }
               ]);
-              // Update currentResolution to actual settings
-              currentResolution = { width: settings.width, height: settings.height };
             }
           } catch (error) {
             console.error('Error initializing video stream:', error);
@@ -540,7 +527,6 @@
               currentCameraIndex = index;
               localStorage.setItem('currentCameraIndex', currentCameraIndex);
               Modal.close();
-              currentResolution = null; // Reset resolution to select new resolution
               startStream();
             }
           }));
@@ -574,45 +560,35 @@
           };
         };
         
-        const getOrientation = () => {
-          if (window.matchMedia("(orientation: portrait)").matches) {
-            return 'portrait';
-          } else {
-            return 'landscape';
-          }
-        };
-        
-        const handleOrientationChange = () => {
-          const newOrientation = getOrientation();
-          if (newOrientation !== currentOrientation) {
-            currentOrientation = newOrientation;
-            Modal.show('Orientation changed. Do you want to restart the camera stream with the new orientation?', [
-              {
-                label: 'Yes',
-                onClick: async () => {
-                  Modal.close();
-                  currentResolution = null; // Reset resolution to select new resolution
-                  await startStream();
-                }
-              },
-              {
-                label: 'No',
-                onClick: () => {
-                  Modal.close();
-                }
-              }
-            ]);
-          }
+        const determineOrientation = () => {
+          currentOrientation = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+          availableResolutions = currentOrientation === 'landscape' ? landscapeResolutions : portraitResolutions;
         };
         
         const init = async () => {
+          determineOrientation();
           await getCameras();
-          await startStream();
-          window.addEventListener('resize', resizeVideo);
+          if (cameras.length > 0) {
+            currentResolution = availableResolutions[0]; // Set default resolution
+            await startStream();
+          }
+          window.addEventListener('resize', () => {
+            const previousOrientation = currentOrientation;
+            determineOrientation();
+            if (previousOrientation !== currentOrientation) {
+              // Orientation changed, update available resolutions
+              Modal.show(`Orientation changed to ${currentOrientation}. Please select a new resolution.`, [
+                { label: 'Select Resolution', onClick: async () => {
+                  Modal.close();
+                  await switchResolution();
+                }},
+                { label: 'Cancel', onClick: Modal.close }
+              ]);
+            }
+          });
           navigator.mediaDevices.addEventListener('devicechange', async () => {
             await getCameras();
           });
-          window.addEventListener('orientationchange', handleOrientationChange);
         };
         
         return { init, switchCamera, switchResolution };

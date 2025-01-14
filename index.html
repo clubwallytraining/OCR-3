@@ -7,7 +7,6 @@
     orientation-based resizing behaves consistently on mobile devices.
   -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-
   <title>Fullscreen Camera Stream</title>
   
   <!-- Include Video.js CSS without integrity and crossorigin checks -->
@@ -422,16 +421,18 @@
 
         let currentStream = null;
         let currentCameraIndex = 0;
-        let currentResolution = null;
+        // Default to a single resolution if user hasn't chosen
+        let currentResolution = { width: 1280, height: 720 };
         let cameras = [];
         let isChangingStream = false;
         let debounceTimeout;
         let player = null;
         
-        // Track whether the user chose a resolution manually
+        // Track if user selected a resolution manually
         let wasManualResolutionSelected = false;
         
-        // Resolutions with accurate labels
+        // We keep "Portrait" / "Landscape" labels but do NOT dynamically swap them.
+        // The user picks them exactly as stored here.
         const resolutions = [
           { label: 'Portrait 480x640', width: 480, height: 640 },
           { label: 'Landscape 640x480', width: 640, height: 480 },
@@ -445,7 +446,7 @@
           { label: 'Landscape 3840x2160', width: 3840, height: 2160 }
         ];
         
-        // Robust orientation detection
+        // Orientation detection for indicator only, no effect on resolution constraints
         const getDeviceOrientation = () => {
           if (window.screen.orientation && window.screen.orientation.type) {
             return window.screen.orientation.type.startsWith('portrait') ? 'portrait' : 'landscape';
@@ -453,22 +454,18 @@
           return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
         };
         
-        // Function to set default resolution based on orientation, only if user has not picked one
-        const setDefaultResolutionIfNeeded = () => {
-          if (wasManualResolutionSelected) {
-            return;
-          }
+        // Because we're not forcing orientation-based resolution, we only update the indicator
+        const updateOrientationIndicator = () => {
           const orientation = getDeviceOrientation();
-          const defaultRes = resolutions.find(res => {
-            if (orientation === 'portrait') {
-              return res.label.startsWith('Portrait');
-            } else {
-              return res.label.startsWith('Landscape');
-            }
-          });
-          currentResolution = defaultRes || { width: 1280, height: 720 };
-          updateOrientationIndicator(orientation);
-          console.log(`Auto-set default resolution to: ${currentResolution.label}`);
+          orientationValue.textContent = `Orientation: ${orientation}`;
+          if (orientation === 'portrait') {
+            orientationCircle.style.backgroundColor = 'blue';
+          } else if (orientation === 'landscape') {
+            orientationCircle.style.backgroundColor = 'purple';
+          } else {
+            orientationCircle.style.backgroundColor = 'gray';
+          }
+          console.log(`Orientation Indicator updated to: ${orientation}`);
         };
         
         const initializeVideoJS = () => {
@@ -484,7 +481,7 @@
         };
         
         const resizeVideo = () => {
-          // With object-fit: cover, manual resizing is minimal, but we log for clarity
+          // With object-fit: cover, manual resizing isn't essential, but we log for clarity
           console.log('Window resized or orientation changed; adjusting video layout if needed.');
         };
         
@@ -510,33 +507,19 @@
           console.log(message);
         };
         
-        const updateOrientationIndicator = (orientation) => {
-          orientationValue.textContent = `Orientation: ${orientation}`;
-          if (orientation === 'portrait') {
-            orientationCircle.style.backgroundColor = 'blue';
-          } else if (orientation === 'landscape') {
-            orientationCircle.style.backgroundColor = 'purple';
-          } else {
-            orientationCircle.style.backgroundColor = 'gray';
-          }
-          console.log(`Orientation Indicator updated to: ${orientation}`);
-        };
-        
         const startStream = async () => {
           if (isChangingStream) return;
           isChangingStream = true;
           
           try {
             loadingIndicator.style.display = 'block';
+            updateOrientationIndicator();
             console.log('Starting stream...');
             
             if (currentStream) {
               console.log('Stopping previous stream tracks.');
               currentStream.getTracks().forEach(track => track.stop());
             }
-            
-            // Only set default resolution if user didn't manually select one
-            setDefaultResolutionIfNeeded();
             
             const constraints = {
               video: {
@@ -575,7 +558,7 @@
                 `Requested resolution ${currentResolution.width}x${currentResolution.height} not supported. Using ${settings.width}x${settings.height} instead.`,
                 [{ label: 'OK', onClick: Modal.close }]
               );
-              console.warn(`Resolution mismatch: Requested ${currentResolution.width}x${currentResolution.height}, Got ${settings.width}x${settings.height}`);
+              console.warn(`Resolution mismatch: Requested ${currentResolution.width}x${currentResolution.height}, got ${settings.width}x${settings.height}`);
             }
           } catch (error) {
             console.error('Error initializing video stream:', error);
@@ -620,7 +603,6 @@
           const resolutionOptions = resolutions.map(res => ({
             label: res.label,
             onClick: async () => {
-              // Mark that the user is changing resolution manually
               wasManualResolutionSelected = true;
               currentResolution = { width: res.width, height: res.height };
               Modal.close();
@@ -639,24 +621,23 @@
           };
         };
         
+        // Orientation change only updates the orientation indicator and re-starts the stream
+        // with the current resolution, preserving the user's chosen dimension set.
         const handleOrientationChange = () => {
           console.log('Orientation change detected.');
           resizeVideo();
-          // We do NOT reset resolution to default if the user selected one manually;
-          // Instead, just restart the stream with the current resolution.
-          startStream();
+          startStream(); 
         };
         
         const init = async () => {
           await getCameras();
-          // Only set default resolution if user hasn't manually chosen one
-          setDefaultResolutionIfNeeded();
+          // Start streaming with default resolution (1280x720) unless the user picks otherwise
           await startStream();
           
           // Listen for resize events (covers orientation changes in some browsers)
           window.addEventListener('resize', resizeVideo);
           
-          // Listen for orientationchange
+          // Listen for orientationchange specifically
           window.addEventListener('orientationchange', handleOrientationChange);
           
           // Listen for device changes (e.g., new camera added)

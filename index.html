@@ -90,7 +90,7 @@
       background-color: var(--button-hover-bg);
     }
     
-    /* FPS Counter */
+    /* FPS Counter (Browser Rendering) */
     #fps-counter {
       position: fixed;
       bottom: 20px;
@@ -113,7 +113,7 @@
       background-color: green;
     }
 
-    /* Orientation Indicator */
+    /* Orientation Indicator (Informational) */
     #orientation-indicator {
       position: fixed;
       bottom: 20px;
@@ -136,7 +136,7 @@
       background-color: blue;
     }
 
-    /* Camera FPS Indicator */
+    /* Camera FPS Indicator (Actual camera capture rate) */
     #camera-fps-indicator {
       position: fixed;
       bottom: 20px;
@@ -305,7 +305,7 @@
     <span id="fps-value">FPS: --</span>
   </div>
   
-  <!-- Orientation Indicator (Informational) -->
+  <!-- Orientation Indicator -->
   <div id="orientation-indicator">
     <div class="orientation-indicator-circle" id="orientation-circle"></div>
     <span id="orientation-value">Orientation: --</span>
@@ -348,7 +348,7 @@
   <!-- JavaScript for Functionality -->
   <script>
     (function() {
-      // Utility to create elements
+      // Utility function to create DOM elements
       const createElement = (tag, attributes = {}, ...children) => {
         const element = document.createElement(tag);
         for (const key in attributes) {
@@ -413,7 +413,7 @@
         return { show, close };
       })();
       
-      // FPS Counter (Browser rendering) Module
+      // Rendering FPS Counter Module
       const FPSCounter = (() => {
         const fpsCounter = document.getElementById('fps-value');
         const fpsIndicator = document.getElementById('fps-indicator');
@@ -446,7 +446,7 @@
         return { start };
       })();
       
-      // Checks if chosen resolution is 4K
+      // Check if the resolution is 4K
       function is4KResolution(res) {
         // 4K typically 3840×2160 or 2160×3840
         const combos = [
@@ -467,7 +467,7 @@
         let currentStream = null;
         let currentCameraIndex = 0;
         
-        // By default 720p
+        // Default resolution
         let currentResolution = {
           width: 1280,
           height: 720,
@@ -475,15 +475,15 @@
           orientation: 'landscape'
         };
         
-        // Let user pick fps
-        let userChosenFps = 60; // default
+        // User-chosen FPS (30 or 60). Default to 60
+        let userChosenFps = 60; 
         
         let cameras = [];
         let isChangingStream = false;
         let debounceTimeout;
         let player = null;
         
-        // Resolutions with swapped labels
+        // Swapped label resolution array
         const resolutions = [
           { label: 'Landscape 480x640', width: 480, height: 640, orientation: 'portrait' },
           { label: 'Portrait 640x480', width: 640, height: 480, orientation: 'landscape' },
@@ -497,7 +497,6 @@
           { label: 'Portrait 3840x2160', width: 3840, height: 2160, orientation: 'landscape' }
         ];
         
-        // Orientation detection (for indicator only)
         const getDeviceOrientation = () => {
           if (window.screen.orientation && window.screen.orientation.type) {
             return window.screen.orientation.type.startsWith('portrait') ? 'portrait' : 'landscape';
@@ -553,11 +552,6 @@
           }
         };
         
-        // Attempt to get user media with given constraints
-        async function getUserMediaWithConstraints(constraints) {
-          return await navigator.mediaDevices.getUserMedia(constraints);
-        }
-        
         const displayStreamSettings = (settings) => {
           const message = `Current Resolution: ${settings.width}x${settings.height}, FPS: ${settings.frameRate}`;
           Modal.show(message, [
@@ -580,11 +574,11 @@
               currentStream.getTracks().forEach(track => track.stop());
             }
             
-            // If the user picked 60 but resolution is 4K, cap at 30
+            // If it’s 4K but user requested 60 => we override to 30.
             let chosenFps = userChosenFps;
             if (is4KResolution(currentResolution) && userChosenFps === 60) {
-              console.warn('4K resolution forced to 30 FPS, ignoring user 60 FPS request.');
               chosenFps = 30;
+              console.warn('4K resolution forced to 30 FPS, ignoring user 60 FPS request.');
             }
             
             const constraints = {
@@ -600,9 +594,27 @@
             };
             
             console.log('Requesting media with constraints:', constraints);
-            currentStream = await getUserMediaWithConstraints(constraints);
             
-            // Assign the stream to the video element
+            // If the browser / device can't do 60, we'll get OverconstrainedError. 
+            // We will NOT silently drop to 30. Instead, we’ll show a modal to let user pick another setting.
+            let stream;
+            try {
+              stream = await navigator.mediaDevices.getUserMedia(constraints);
+            } catch (error) {
+              // If OverconstrainedError => let user pick a different combination
+              if (error.name === 'OverconstrainedError' || error.name === 'ConstraintNotSatisfiedError') {
+                console.error('Overconstrained error: the requested FPS or resolution is not supported.');
+                Modal.show(
+                  `Requested resolution/FPS not supported: ${currentResolution.width}x${currentResolution.height} @ ${chosenFps} FPS.`,
+                  [{ label: 'OK', onClick: Modal.close }]
+                );
+                throw error;
+              } else {
+                throw error;
+              }
+            }
+            
+            currentStream = stream;
             videoElement.srcObject = currentStream;
             await videoElement.play();
             
@@ -617,7 +629,7 @@
             // Update camera FPS indicator
             updateCameraFpsIndicator(settings.frameRate || chosenFps);
             
-            // Show user the actual settings
+            // Display actual settings
             displayStreamSettings(settings);
             
             // If device didn’t provide exactly what we asked for:
@@ -633,18 +645,14 @@
                 `Resolution mismatch: Requested ${currentResolution.width}x${currentResolution.height}, got ${settings.width}x${settings.height}`
               );
             }
+            
           } catch (error) {
             console.error('Error initializing video stream:', error);
-            if (error.name === 'OverconstrainedError' || error.name === 'ConstraintNotSatisfiedError') {
-              Modal.show(
-                `Requested configuration not supported. Try a lower resolution or different FPS.`,
-                [{ label: 'OK', onClick: Modal.close }]
-              );
-            } else if (error.name === 'NotAllowedError') {
+            if (error.name === 'NotAllowedError') {
               alert('Camera access was denied. Please enable it in your browser settings.');
             } else if (error.name === 'NotFoundError') {
               alert('No camera device found. Please connect a camera and try again.');
-            } else {
+            } else if (error.name !== 'OverconstrainedError' && error.name !== 'ConstraintNotSatisfiedError') {
               alert(`An unexpected error occurred while accessing the camera: ${error.name}`);
             }
           } finally {
@@ -732,7 +740,7 @@
         
         const init = async () => {
           await getCameras();
-          // Start with default resolution & default fps
+          // Start with default resolution & FPS
           await startStream();
           
           window.addEventListener('resize', resizeVideo);
@@ -806,18 +814,20 @@
         return { init };
       })();
       
-      // Initialize Everything
+      // Initialize Modules
       document.addEventListener('DOMContentLoaded', () => {
-        FPSCounter.start();        // Start the rendering FPS counter
-        Permissions.init();        // Check camera permissions
+        // Start the UI-based (render loop) FPS counter
+        FPSCounter.start();
+        // Check camera permissions and launch if possible
+        Permissions.init();
         
-        // Attach event handlers for UI controls
+        // Attach handlers
         document.getElementById('change-camera').addEventListener('click', CameraStream.switchCamera);
         document.getElementById('change-resolution').addEventListener('click', debounce(CameraStream.switchResolution));
         document.getElementById('change-fps').addEventListener('click', debounce(CameraStream.switchFps));
       });
       
-      // Debounce function (accessible outside modules)
+      // Debounce function outside modules
       function debounce(func, delay = 300) {
         let debounceTimeout;
         return function(...args) {

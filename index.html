@@ -78,7 +78,7 @@
       cursor: pointer;
       transition: background-color 0.3s;
       font-size: var(--button-font-size);
-      min-width: 120px;
+      min-width: 150px;
       text-align: center;
     }
     
@@ -146,7 +146,7 @@
       border: 1px solid #888;
       border-radius: 10px;
       width: 80%;
-      max-width: 400px;
+      max-width: 500px;
       position: relative;
       text-align: center;
     }
@@ -178,6 +178,8 @@
       flex-direction: column;
       gap: 10px;
       align-items: center;
+      max-height: 300px;
+      overflow-y: auto;
     }
     
     .modal-option {
@@ -191,6 +193,7 @@
       font-size: 16px;
       width: 100%;
       max-width: 300px;
+      text-align: left;
     }
     
     .modal-option:hover {
@@ -202,7 +205,7 @@
       .control-button {
         padding: 10px 20px;
         font-size: 14px;
-        min-width: 100px;
+        min-width: 120px;
       }
       
       .modal-content {
@@ -370,22 +373,30 @@
         const videoElement = document.getElementById('camera-stream');
         const loadingIndicator = document.getElementById('loading-indicator');
         let currentStream = null;
-        let currentCameraIndex = 0; // Removed localStorage dependency
+        let currentCameraIndex = parseInt(localStorage.getItem('currentCameraIndex')) || 0;
+        let currentResolution = JSON.parse(localStorage.getItem('currentResolution')) || { width: 1280, height: 720 };
         let cameras = [];
         let isChangingStream = false;
         let debounceTimeout;
         let player = null;
-        let currentOrientation = 'landscape';
-        let availableResolutions = [];
-        let currentResolution = null;
         
-        // Define base resolutions (landscape)
-        const baseResolutions = [
-          { label: '480p', width: 640, height: 480 },
-          { label: '720p', width: 1280, height: 720 },
-          { label: '1080p', width: 1920, height: 1080 },
-          { label: '2K', width: 2560, height: 1440 },
-          { label: '4K', width: 3840, height: 2160 }
+        // Updated Resolutions as per requirements
+        const resolutions = [
+          // 480p
+          { label: 'Landscape 640x480', width: 640, height: 480 },
+          { label: 'Portrait 480x640', width: 480, height: 640 },
+          // 720p
+          { label: 'Landscape 1280x720', width: 1280, height: 720 },
+          { label: 'Portrait 720x1280', width: 720, height: 1280 },
+          // 1080p
+          { label: 'Landscape 1920x1080', width: 1920, height: 1080 },
+          { label: 'Portrait 1080x1920', width: 1080, height: 1920 },
+          // 2K
+          { label: 'Landscape 2560x1440', width: 2560, height: 1440 },
+          { label: 'Portrait 1440x2560', width: 1440, height: 2560 },
+          // 4K
+          { label: 'Landscape 3840x2160', width: 3840, height: 2160 },
+          { label: 'Portrait 2160x3840', width: 2160, height: 3840 }
         ];
         
         const initializeVideoJS = () => {
@@ -417,36 +428,6 @@
           }
         };
         
-        const getSupportedResolutions = async () => {
-          const supportedResolutions = [];
-          for (const res of baseResolutions) {
-            try {
-              const testConstraints = {
-                video: {
-                  deviceId: cameras[currentCameraIndex]?.deviceId ? { exact: cameras[currentCameraIndex].deviceId } : undefined,
-                  facingMode: 'environment',
-                  width: { ideal: res.width },
-                  height: { ideal: res.height },
-                  frameRate: { ideal: 60, max: 60 } // Adjusted frame rate constraints
-                }
-              };
-              const testStream = await navigator.mediaDevices.getUserMedia(testConstraints);
-              const videoTrack = testStream.getVideoTracks()[0];
-              const settings = videoTrack.getSettings();
-              // Check if the resolution is approximately what we requested
-              const widthSupported = Math.abs(settings.width - res.width) <= 100;
-              const heightSupported = Math.abs(settings.height - res.height) <= 100;
-              if (widthSupported && heightSupported) {
-                supportedResolutions.push(res);
-              }
-              testStream.getTracks().forEach(track => track.stop());
-            } catch (e) {
-              console.warn(`Resolution ${res.label} not supported.`);
-            }
-          }
-          return supportedResolutions;
-        };
-        
         const displayStreamSettings = (settings) => {
           const message = `Current Resolution: ${settings.width}x${settings.height}, FPS: ${settings.frameRate}`;
           Modal.show(message, [
@@ -471,9 +452,9 @@
               video: {
                 deviceId: cameras[currentCameraIndex]?.deviceId ? { exact: cameras[currentCameraIndex].deviceId } : undefined,
                 facingMode: 'environment',
-                width: { ideal: currentResolution.width },
-                height: { ideal: currentResolution.height },
-                frameRate: { ideal: 60, max: 60 } // Adjusted frame rate constraints
+                width: { exact: currentResolution.width },
+                height: { exact: currentResolution.height },
+                frameRate: { ideal: 120, max: 120 } // Retained original frame rate constraints
               }
             };
             
@@ -496,13 +477,17 @@
             displayStreamSettings(settings);
             
             if (settings.width !== currentResolution.width || settings.height !== currentResolution.height) {
-              Modal.show(`Requested resolution ${currentResolution.label} not supported. Using ${settings.width}x${settings.height} instead.`, [
+              Modal.show(`Requested resolution ${currentResolution.width}x${currentResolution.height} not supported. Using ${settings.width}x${settings.height} instead.`, [
                 { label: 'OK', onClick: Modal.close }
               ]);
             }
           } catch (error) {
             console.error('Error initializing video stream:', error);
-            if (error.name === 'NotAllowedError') {
+            if (error.name === 'OverconstrainedError' || error.name === 'ConstraintNotSatisfiedError') {
+              Modal.show(`The selected resolution ${currentResolution.width}x${currentResolution.height} is not supported by your device. Please choose a different resolution.`, [
+                { label: 'OK', onClick: Modal.close }
+              ]);
+            } else if (error.name === 'NotAllowedError') {
               alert('Camera access was denied. Please enable it in your browser settings.');
             } else if (error.name === 'NotFoundError') {
               alert('No camera device found. Please connect a camera and try again.');
@@ -525,6 +510,7 @@
             label: camera.label || `Camera ${index + 1}`,
             onClick: () => {
               currentCameraIndex = index;
+              localStorage.setItem('currentCameraIndex', currentCameraIndex);
               Modal.close();
               startStream();
             }
@@ -533,17 +519,12 @@
           Modal.show('Select a camera:', cameraOptions);
         };
         
-        const switchResolution = async () => {
-          const supportedResolutions = await getSupportedResolutions();
-          if (!supportedResolutions.length) {
-            alert('No supported resolutions available to choose from.');
-            return;
-          }
-          
-          const resolutionOptions = supportedResolutions.map(res => ({
-            label: currentOrientation === 'portrait' ? `${res.height}x${res.width}` : `${res.width}x${res.height}`,
+        const switchResolution = () => {
+          const resolutionOptions = resolutions.map(res => ({
+            label: res.label,
             onClick: async () => {
-              currentResolution = res;
+              currentResolution = { width: res.width, height: res.height };
+              localStorage.setItem('currentResolution', JSON.stringify(currentResolution));
               Modal.close();
               await startStream();
             }
@@ -559,41 +540,10 @@
           };
         };
         
-        const determineOrientation = () => {
-          currentOrientation = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
-        };
-        
         const init = async () => {
-          determineOrientation();
           await getCameras();
-          if (cameras.length > 0) {
-            // Attempt to set the highest available resolution as default
-            const supportedResolutions = await getSupportedResolutions();
-            if (supportedResolutions.length > 0) {
-              // Sort resolutions from highest to lowest
-              supportedResolutions.sort((a, b) => {
-                return (b.width * b.height) - (a.width * a.height);
-              });
-              currentResolution = supportedResolutions[0]; // Set default resolution to highest supported
-              await startStream();
-            } else {
-              alert('No supported resolutions found.');
-            }
-          }
-          window.addEventListener('resize', () => {
-            const previousOrientation = currentOrientation;
-            determineOrientation();
-            if (previousOrientation !== currentOrientation) {
-              // Orientation changed, notify the user
-              Modal.show(`Orientation changed to ${currentOrientation}. Please select a new resolution.`, [
-                { label: 'Select Resolution', onClick: async () => {
-                  Modal.close();
-                  await switchResolution();
-                }},
-                { label: 'Cancel', onClick: Modal.close }
-              ]);
-            }
-          });
+          await startStream();
+          window.addEventListener('resize', resizeVideo);
           navigator.mediaDevices.addEventListener('devicechange', async () => {
             await getCameras();
           });

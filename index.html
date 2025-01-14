@@ -51,12 +51,11 @@
       position: absolute;
       top: 50%;
       left: 50%;
-      transform: translate(-50%, -50%) rotate(0deg);
+      transform: translate(-50%, -50%);
       background-color: black;
       width: 100%;
       height: 100%;
       object-fit: cover;
-      transition: transform 0.3s ease;
     }
 
     /* Controls styling */
@@ -379,23 +378,10 @@
         let player = null;
         
         const resolutions = [
-          { label: '3840x2160', width: 3840, height: 2160 },
-          { label: '2560x1440', width: 2560, height: 1440 },
-          { label: '1920x1080', width: 1920, height: 1080 },
           { label: '1280x720', width: 1280, height: 720 },
+          { label: '1920x1080', width: 1920, height: 1080 },
           { label: '640x480', width: 640, height: 480 }
         ];
-        
-        // Function to detect device orientation
-        const isPortrait = () => window.matchMedia("(orientation: portrait)").matches;
-        
-        // Function to adjust resolution based on orientation
-        const getAdjustedResolution = (res) => {
-          if (isPortrait()) {
-            return { width: res.height, height: res.width };
-          }
-          return { width: res.width, height: res.height };
-        };
         
         const initializeVideoJS = () => {
           if (!player) {
@@ -409,12 +395,8 @@
         };
         
         const resizeVideo = () => {
-          // Handle orientation changes by rotating the video element
-          if (isPortrait()) {
-            videoElement.style.transform = 'translate(-50%, -50%) rotate(90deg)';
-          } else {
-            videoElement.style.transform = 'translate(-50%, -50%) rotate(0deg)';
-          }
+          // Let the video element handle sizing with object-fit: cover
+          // This function can be used for additional custom resizing if needed
         };
         
         const getCameras = async () => {
@@ -434,13 +416,12 @@
           const supportedResolutions = [];
           for (const res of resolutions) {
             try {
-              const adjustedRes = getAdjustedResolution(res);
               const testConstraints = {
                 video: {
                   deviceId: cameras[currentCameraIndex]?.deviceId ? { exact: cameras[currentCameraIndex].deviceId } : undefined,
                   facingMode: 'environment',
-                  width: { exact: adjustedRes.width },
-                  height: { exact: adjustedRes.height },
+                  width: { exact: res.width },
+                  height: { exact: res.height },
                   frameRate: { ideal: 120, max: 120 } // Retained original frame rate constraints
                 }
               };
@@ -474,14 +455,12 @@
               currentStream.getTracks().forEach(track => track.stop());
             }
             
-            const adjustedRes = getAdjustedResolution(currentResolution);
-            
             const constraints = {
               video: {
                 deviceId: cameras[currentCameraIndex]?.deviceId ? { exact: cameras[currentCameraIndex].deviceId } : undefined,
                 facingMode: 'environment',
-                width: { ideal: adjustedRes.width },
-                height: { ideal: adjustedRes.height },
+                width: { ideal: currentResolution.width },
+                height: { ideal: currentResolution.height },
                 frameRate: { ideal: 120, max: 120 } // Retained original frame rate constraints
               }
             };
@@ -504,15 +483,11 @@
             // Display actual settings to user
             displayStreamSettings(settings);
             
-            if (settings.width !== adjustedRes.width || settings.height !== adjustedRes.height) {
-              Modal.show(`Requested resolution ${adjustedRes.width}x${adjustedRes.height} not supported. Using ${settings.width}x${settings.height} instead.`, [
+            if (settings.width !== currentResolution.width || settings.height !== currentResolution.height) {
+              Modal.show(`Requested resolution ${currentResolution.width}x${currentResolution.height} not supported. Using ${settings.width}x${settings.height} instead.`, [
                 { label: 'OK', onClick: Modal.close }
               ]);
             }
-            
-            // Adjust video orientation
-            resizeVideo();
-            
           } catch (error) {
             console.error('Error initializing video stream:', error);
             if (error.name === 'NotAllowedError') {
@@ -567,9 +542,7 @@
           Modal.show('Select a resolution:', resolutionOptions);
         };
         
-        // Debounce function outside modules to be accessible
         const debounce = (func, delay = 300) => {
-          let debounceTimeout;
           return function(...args) {
             clearTimeout(debounceTimeout);
             debounceTimeout = setTimeout(() => func.apply(this, args), delay);
@@ -580,83 +553,90 @@
           await getCameras();
           await startStream();
           window.addEventListener('resize', resizeVideo);
-          window.addEventListener('orientationchange', () => {
-            console.log('Orientation changed. Adjusting video stream.');
-            startStream();
-          });
           navigator.mediaDevices.addEventListener('devicechange', async () => {
             await getCameras();
           });
         };
         
-        // Permissions Module
-        const Permissions = (() => {
-          const checkPermissions = async () => {
-            try {
-              const permissionStatus = await navigator.permissions.query({ name: 'camera' });
-              handlePermissionState(permissionStatus.state);
-              
-              permissionStatus.onchange = () => {
-                handlePermissionState(permissionStatus.state);
-              };
-            } catch (error) {
-              console.error('Error checking camera permissions:', error);
-              Modal.show('An error occurred while accessing camera permissions.');
-            }
-          };
-          
-          const handlePermissionState = (state) => {
-            switch(state) {
-              case 'denied':
-                Modal.show('Camera access is denied. Please enable it in your browser settings.');
-                break;
-              case 'prompt':
-                requestCameraAccess();
-                break;
-              case 'granted':
-                CameraStream.init();
-                break;
-              default:
-                break;
-            }
-          };
-          
-          const requestCameraAccess = async () => {
-            try {
-              await navigator.mediaDevices.getUserMedia({ video: true });
-              Modal.show('Camera access granted. The page will now refresh to start the camera stream.', [
-                {
-                  label: 'Continue',
-                  onClick: () => {
-                    Modal.close();
-                    location.reload();
-                  }
-                }
-              ]);
-            } catch (error) {
-              console.error('Error requesting camera access:', error);
-              Modal.show('Camera access is required to use this application.');
-            }
-          };
-          
-          const init = () => {
-            checkPermissions();
-          };
-          
-          return { init };
-        })();
-        
-        // Initialize Modules
-        document.addEventListener('DOMContentLoaded', () => {
-          FPSCounter.start();
-          Permissions.init();
-          
-          // Correctly reference CameraStream's functions
-          document.getElementById('change-camera').addEventListener('click', CameraStream.switchCamera);
-          document.getElementById('change-resolution').addEventListener('click', debounce(CameraStream.switchResolution));
-        });
-        
+        return { init, switchCamera, switchResolution };
       })();
+      
+      // Permissions Module
+      const Permissions = (() => {
+        const checkPermissions = async () => {
+          try {
+            const permissionStatus = await navigator.permissions.query({ name: 'camera' });
+            handlePermissionState(permissionStatus.state);
+            
+            permissionStatus.onchange = () => {
+              handlePermissionState(permissionStatus.state);
+            };
+          } catch (error) {
+            console.error('Error checking camera permissions:', error);
+            Modal.show('An error occurred while accessing camera permissions.');
+          }
+        };
+        
+        const handlePermissionState = (state) => {
+          switch(state) {
+            case 'denied':
+              Modal.show('Camera access is denied. Please enable it in your browser settings.');
+              break;
+            case 'prompt':
+              requestCameraAccess();
+              break;
+            case 'granted':
+              CameraStream.init();
+              break;
+            default:
+              break;
+          }
+        };
+        
+        const requestCameraAccess = async () => {
+          try {
+            await navigator.mediaDevices.getUserMedia({ video: true });
+            Modal.show('Camera access granted. The page will now refresh to start the camera stream.', [
+              {
+                label: 'Continue',
+                onClick: () => {
+                  Modal.close();
+                  location.reload();
+                }
+              }
+            ]);
+          } catch (error) {
+            console.error('Error requesting camera access:', error);
+            Modal.show('Camera access is required to use this application.');
+          }
+        };
+        
+        const init = () => {
+          checkPermissions();
+        };
+        
+        return { init };
+      })();
+      
+      // Initialize Modules
+      document.addEventListener('DOMContentLoaded', () => {
+        FPSCounter.start();
+        Permissions.init();
+        
+        document.getElementById('change-camera').addEventListener('click', CameraStream.switchCamera);
+        document.getElementById('change-resolution').addEventListener('click', debounce(CameraStream.switchResolution));
+      });
+      
+      // Debounce function outside modules to be accessible
+      function debounce(func, delay = 300) {
+        let debounceTimeout;
+        return function(...args) {
+          clearTimeout(debounceTimeout);
+          debounceTimeout = setTimeout(() => func.apply(this, args), delay);
+        };
+      }
+      
+    })();
   </script>
   
 </body>

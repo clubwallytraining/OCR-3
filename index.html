@@ -25,8 +25,8 @@
       --fps-bg: rgba(0, 0, 0, 0.5);
       --button-font-size: 16px;
       --button-padding: 12px 24px;
-      --fps-target: 60;
-      --fps-acceptable: 30;
+      --fps-target: 120;
+      --fps-acceptable: 60;
     }
     
     /* Reset and base styles */
@@ -338,8 +338,8 @@
         const fpsIndicator = document.getElementById('fps-indicator');
         let frameCount = 0;
         let lastTime = performance.now();
-        const targetFPS = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fps-target')) || 60;
-        const acceptableFPS = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fps-acceptable')) || 30;
+        const targetFPS = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fps-target')) || 120;
+        const acceptableFPS = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fps-acceptable')) || 60;
         
         const update = () => {
           frameCount++;
@@ -384,15 +384,14 @@
         ];
         
         const initializeVideoJS = () => {
-          if (player) {
-            player.dispose();
+          if (!player) {
+            player = videojs('camera-stream', {
+              autoplay: true,
+              muted: true,
+              controls: false,
+              fluid: true
+            });
           }
-          player = videojs('camera-stream', {
-            autoplay: true,
-            muted: true,
-            controls: false,
-            fluid: true
-          });
         };
         
         const resizeVideo = () => {
@@ -423,7 +422,7 @@
                   facingMode: 'environment',
                   width: { exact: res.width },
                   height: { exact: res.height },
-                  frameRate: { exact: 60 }
+                  frameRate: { ideal: 120, max: 120 } // Retained original frame rate constraints
                 }
               };
               const testStream = await navigator.mediaDevices.getUserMedia(testConstraints);
@@ -462,36 +461,33 @@
                 facingMode: 'environment',
                 width: { ideal: currentResolution.width },
                 height: { ideal: currentResolution.height },
-                frameRate: { ideal: 60, max: 60 } // Adjusted frame rate
+                frameRate: { ideal: 120, max: 120 } // Retained original frame rate constraints
               }
             };
             
             console.log('Requesting media with constraints:', constraints);
             currentStream = await navigator.mediaDevices.getUserMedia(constraints);
             
-            // Initialize Video.js
-            initializeVideoJS();
-            player.srcObject = currentStream;
-            player.play();
+            // Assign the stream to the video element before initializing Video.js
+            videoElement.srcObject = currentStream;
+            await videoElement.play();
             
-            videoElement.onloadedmetadata = () => {
-              videoElement.play();
-              resizeVideo();
-              
-              // Verify and log actual settings
-              const videoTrack = currentStream.getVideoTracks()[0];
-              const settings = videoTrack.getSettings();
-              console.log(`Actual resolution: ${settings.width}x${settings.height}, FPS: ${settings.frameRate}`);
-              
-              // Display actual settings to user
-              displayStreamSettings(settings);
-              
-              if (settings.width !== currentResolution.width || settings.height !== currentResolution.height) {
-                Modal.show(`Requested resolution ${currentResolution.width}x${currentResolution.height} not supported. Using ${settings.width}x${settings.height} instead.`, [
-                  { label: 'OK', onClick: Modal.close }
-                ]);
-              }
-            };
+            // Initialize Video.js once
+            initializeVideoJS();
+            
+            // Verify and log actual settings
+            const videoTrack = currentStream.getVideoTracks()[0];
+            const settings = videoTrack.getSettings();
+            console.log(`Actual resolution: ${settings.width}x${settings.height}, FPS: ${settings.frameRate}`);
+            
+            // Display actual settings to user
+            displayStreamSettings(settings);
+            
+            if (settings.width !== currentResolution.width || settings.height !== currentResolution.height) {
+              Modal.show(`Requested resolution ${currentResolution.width}x${currentResolution.height} not supported. Using ${settings.width}x${settings.height} instead.`, [
+                { label: 'OK', onClick: Modal.close }
+              ]);
+            }
           } catch (error) {
             console.error('Error initializing video stream:', error);
             if (error.name === 'NotAllowedError') {

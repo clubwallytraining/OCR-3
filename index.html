@@ -51,13 +51,11 @@
       position: absolute;
       top: 50%;
       left: 50%;
-      transform: translate(-50%, -50%);
+      transform: translate(-50%, -50%) rotate(0deg);
       background-color: black;
       width: 100%;
       height: 100%;
       object-fit: cover;
-      /* Ensure correct orientation */
-      transform: translate(-50%, -50%) rotate(0deg);
       transition: transform 0.3s ease;
     }
 
@@ -411,7 +409,7 @@
         };
         
         const resizeVideo = () => {
-          // Handle orientation changes
+          // Handle orientation changes by rotating the video element
           if (isPortrait()) {
             videoElement.style.transform = 'translate(-50%, -50%) rotate(90deg)';
           } else {
@@ -441,8 +439,8 @@
                 video: {
                   deviceId: cameras[currentCameraIndex]?.deviceId ? { exact: cameras[currentCameraIndex].deviceId } : undefined,
                   facingMode: 'environment',
-                  width: { ideal: adjustedRes.width },
-                  height: { ideal: adjustedRes.height },
+                  width: { exact: adjustedRes.width },
+                  height: { exact: adjustedRes.height },
                   frameRate: { ideal: 120, max: 120 } // Retained original frame rate constraints
                 }
               };
@@ -569,7 +567,9 @@
           Modal.show('Select a resolution:', resolutionOptions);
         };
         
+        // Debounce function outside modules to be accessible
         const debounce = (func, delay = 300) => {
+          let debounceTimeout;
           return function(...args) {
             clearTimeout(debounceTimeout);
             debounceTimeout = setTimeout(() => func.apply(this, args), delay);
@@ -651,21 +651,13 @@
           FPSCounter.start();
           Permissions.init();
           
+          // Correctly reference CameraStream's functions
           document.getElementById('change-camera').addEventListener('click', CameraStream.switchCamera);
           document.getElementById('change-resolution').addEventListener('click', debounce(CameraStream.switchResolution));
         });
         
-        // Debounce function outside modules to be accessible
-        function debounce(func, delay = 300) {
-          let debounceTimeout;
-          return function(...args) {
-            clearTimeout(debounceTimeout);
-            debounceTimeout = setTimeout(() => func.apply(this, args), delay);
-          };
-        }
-        
       })();
-    </script>
-    
+  </script>
+  
 </body>
 </html>

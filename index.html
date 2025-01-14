@@ -109,6 +109,29 @@
       background-color: green;
     }
 
+    /* Orientation Indicator */
+    #orientation-indicator {
+      position: fixed;
+      bottom: 20px;
+      left: 120px; /* Positioned next to the FPS counter */
+      color: #fff;
+      background: var(--fps-bg);
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 14px;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .orientation-indicator-circle {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background-color: blue;
+    }
+
     /* Loading Indicator */
     #loading-indicator {
       position: fixed;
@@ -223,9 +246,13 @@
         font-size: 16px;
       }
       
-      #fps-counter {
+      #fps-counter, #orientation-indicator {
         font-size: 12px;
         padding: 4px 8px;
+      }
+      
+      #orientation-indicator {
+        left: 100px; /* Adjust position for smaller screens */
       }
     }
   </style>
@@ -245,6 +272,12 @@
   <div id="fps-counter">
     <div class="fps-indicator" id="fps-indicator"></div>
     <span id="fps-value">FPS: --</span>
+  </div>
+  
+  <!-- Orientation Indicator -->
+  <div id="orientation-indicator">
+    <div class="orientation-indicator-circle" id="orientation-circle"></div>
+    <span id="orientation-value">Orientation: --</span>
   </div>
   
   <!-- Video Stream -->
@@ -372,6 +405,8 @@
       const CameraStream = (() => {
         const videoElement = document.getElementById('camera-stream');
         const loadingIndicator = document.getElementById('loading-indicator');
+        const orientationValue = document.getElementById('orientation-value');
+        const orientationCircle = document.getElementById('orientation-circle');
         let currentStream = null;
         let currentCameraIndex = 0;
         let currentResolution = null;
@@ -422,6 +457,8 @@
             }
           });
           currentResolution = defaultRes || { width: 1280, height: 720 }; // Fallback to 720p Landscape
+          updateOrientationIndicator(orientation);
+          console.log(`Detected Orientation: ${orientation}`);
         };
         
         const initializeVideoJS = () => {
@@ -458,6 +495,17 @@
           Modal.show(message, [
             { label: 'OK', onClick: Modal.close }
           ]);
+        };
+        
+        const updateOrientationIndicator = (orientation) => {
+          orientationValue.textContent = `Orientation: ${orientation}`;
+          if (orientation === 'portrait') {
+            orientationCircle.style.backgroundColor = 'blue';
+          } else if (orientation === 'landscape') {
+            orientationCircle.style.backgroundColor = 'purple';
+          } else {
+            orientationCircle.style.backgroundColor = 'gray';
+          }
         };
         
         const startStream = async () => {
@@ -567,6 +615,7 @@
         
         const handleOrientationChange = () => {
           console.log('Orientation changed. Restarting stream with new resolution.');
+          setDefaultResolution();
           startStream();
         };
         

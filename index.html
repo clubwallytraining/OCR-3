@@ -422,11 +422,11 @@
         let currentStream = null;
         let currentCameraIndex = 0;
         
-        // Default resolution if user hasn't yet selected one
+        // Default resolution, note we've swapped the label only:
         let currentResolution = {
           width: 1280,
           height: 720,
-          label: 'Landscape 1280x720',
+          label: 'Portrait 1280x720', // Previously was "Landscape 1280x720"
           orientation: 'landscape'
         };
         
@@ -435,18 +435,28 @@
         let debounceTimeout;
         let player = null;
         
-        // We keep orientation purely as a label now; we won't force it in constraints
+        // Swap only the labels below, keep orientation property and dimensions the same.
         const resolutions = [
-          { label: 'Portrait 480x640', width: 480, height: 640, orientation: 'portrait' },
-          { label: 'Landscape 640x480', width: 640, height: 480, orientation: 'landscape' },
-          { label: 'Portrait 720x1280', width: 720, height: 1280, orientation: 'portrait' },
-          { label: 'Landscape 1280x720', width: 1280, height: 720, orientation: 'landscape' },
-          { label: 'Portrait 1080x1920', width: 1080, height: 1920, orientation: 'portrait' },
-          { label: 'Landscape 1920x1080', width: 1920, height: 1080, orientation: 'landscape' },
-          { label: 'Portrait 1440x2560', width: 1440, height: 2560, orientation: 'portrait' },
-          { label: 'Landscape 2560x1440', width: 2560, height: 1440, orientation: 'landscape' },
-          { label: 'Portrait 2160x3840', width: 2160, height: 3840, orientation: 'portrait' },
-          { label: 'Landscape 3840x2160', width: 3840, height: 2160, orientation: 'landscape' }
+          // Old "Portrait 480x640" -> new label "Landscape 480x640"
+          { label: 'Landscape 480x640', width: 480, height: 640, orientation: 'portrait' },
+          // Old "Landscape 640x480" -> new label "Portrait 640x480"
+          { label: 'Portrait 640x480', width: 640, height: 480, orientation: 'landscape' },
+          // Old "Portrait 720x1280" -> new label "Landscape 720x1280"
+          { label: 'Landscape 720x1280', width: 720, height: 1280, orientation: 'portrait' },
+          // Old "Landscape 1280x720" -> new label "Portrait 1280x720"
+          { label: 'Portrait 1280x720', width: 1280, height: 720, orientation: 'landscape' },
+          // Old "Portrait 1080x1920" -> new label "Landscape 1080x1920"
+          { label: 'Landscape 1080x1920', width: 1080, height: 1920, orientation: 'portrait' },
+          // Old "Landscape 1920x1080" -> new label "Portrait 1920x1080"
+          { label: 'Portrait 1920x1080', width: 1920, height: 1080, orientation: 'landscape' },
+          // Old "Portrait 1440x2560" -> new label "Landscape 1440x2560"
+          { label: 'Landscape 1440x2560', width: 1440, height: 2560, orientation: 'portrait' },
+          // Old "Landscape 2560x1440" -> new label "Portrait 2560x1440"
+          { label: 'Portrait 2560x1440', width: 2560, height: 1440, orientation: 'landscape' },
+          // Old "Portrait 2160x3840" -> new label "Landscape 2160x3840"
+          { label: 'Landscape 2160x3840', width: 2160, height: 3840, orientation: 'portrait' },
+          // Old "Landscape 3840x2160" -> new label "Portrait 3840x2160"
+          { label: 'Portrait 3840x2160', width: 3840, height: 2160, orientation: 'landscape' }
         ];
         
         // Orientation detection for indicator only
@@ -523,7 +533,7 @@
               currentStream.getTracks().forEach(track => track.stop());
             }
             
-            // No forced orientation logic—use the chosen width and height exactly
+            // Use the chosen width/height exactly as is; no forced orientation logic:
             const constraints = {
               video: {
                 deviceId: cameras[currentCameraIndex]?.deviceId
@@ -555,7 +565,7 @@
             // Display actual settings to user
             displayStreamSettings(settings);
             
-            // If the device did not provide the exact requested resolution, we show a warning
+            // If the device did not provide the exact requested resolution, show a warning
             if (
               (settings.width !== currentResolution.width && settings.height !== currentResolution.height) &&
               (settings.width !== currentResolution.height && settings.height !== currentResolution.width)

@@ -51,11 +51,13 @@
       position: absolute;
       top: 50%;
       left: 50%;
-      transform: translate(-50%, -50%);
+      transform: translate(-50%, -50%) rotate(0deg);
       background-color: black;
       width: 100%;
       height: 100%;
       object-fit: cover;
+      /* Ensure no rotation is applied */
+      transform-origin: center center;
     }
 
     /* Controls styling */
@@ -433,7 +435,13 @@
               autoplay: true,
               muted: true,
               controls: false,
-              fluid: true
+              fluid: true,
+              // Prevent Video.js from altering the video orientation
+              // Disable any rotation features if present
+              controlBar: {
+                volumePanel: false,
+                fullscreenToggle: false
+              }
             });
           }
         };
@@ -480,8 +488,8 @@
               video: {
                 deviceId: cameras[currentCameraIndex]?.deviceId ? { exact: cameras[currentCameraIndex].deviceId } : undefined,
                 facingMode: 'environment',
-                width: { exact: currentResolution.width },
-                height: { exact: currentResolution.height },
+                width: { ideal: currentResolution.width },
+                height: { ideal: currentResolution.height },
                 frameRate: { ideal: 120, max: 120 } // Retained original frame rate constraints
               }
             };

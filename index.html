@@ -378,10 +378,23 @@
         let player = null;
         
         const resolutions = [
-          { label: '1280x720', width: 1280, height: 720 },
+          { label: '3840x2160', width: 3840, height: 2160 },
+          { label: '2560x1440', width: 2560, height: 1440 },
           { label: '1920x1080', width: 1920, height: 1080 },
+          { label: '1280x720', width: 1280, height: 720 },
           { label: '640x480', width: 640, height: 480 }
         ];
+        
+        // Function to detect device orientation
+        const isPortrait = () => window.matchMedia("(orientation: portrait)").matches;
+        
+        // Function to adjust resolution based on orientation
+        const getAdjustedResolution = (res) => {
+          if (isPortrait()) {
+            return { width: res.height, height: res.width };
+          }
+          return { width: res.width, height: res.height };
+        };
         
         const initializeVideoJS = () => {
           if (!player) {
@@ -416,12 +429,13 @@
           const supportedResolutions = [];
           for (const res of resolutions) {
             try {
+              const adjustedRes = getAdjustedResolution(res);
               const testConstraints = {
                 video: {
                   deviceId: cameras[currentCameraIndex]?.deviceId ? { exact: cameras[currentCameraIndex].deviceId } : undefined,
                   facingMode: 'environment',
-                  width: { exact: res.width },
-                  height: { exact: res.height },
+                  width: { exact: adjustedRes.width },
+                  height: { exact: adjustedRes.height },
                   frameRate: { ideal: 120, max: 120 } // Retained original frame rate constraints
                 }
               };
@@ -455,12 +469,14 @@
               currentStream.getTracks().forEach(track => track.stop());
             }
             
+            const adjustedRes = getAdjustedResolution(currentResolution);
+            
             const constraints = {
               video: {
                 deviceId: cameras[currentCameraIndex]?.deviceId ? { exact: cameras[currentCameraIndex].deviceId } : undefined,
                 facingMode: 'environment',
-                width: { ideal: currentResolution.width },
-                height: { ideal: currentResolution.height },
+                width: { ideal: adjustedRes.width },
+                height: { ideal: adjustedRes.height },
                 frameRate: { ideal: 120, max: 120 } // Retained original frame rate constraints
               }
             };
@@ -483,8 +499,8 @@
             // Display actual settings to user
             displayStreamSettings(settings);
             
-            if (settings.width !== currentResolution.width || settings.height !== currentResolution.height) {
-              Modal.show(`Requested resolution ${currentResolution.width}x${currentResolution.height} not supported. Using ${settings.width}x${settings.height} instead.`, [
+            if (settings.width !== adjustedRes.width || settings.height !== adjustedRes.height) {
+              Modal.show(`Requested resolution ${adjustedRes.width}x${adjustedRes.height} not supported. Using ${settings.width}x${settings.height} instead.`, [
                 { label: 'OK', onClick: Modal.close }
               ]);
             }

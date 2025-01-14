@@ -86,6 +86,27 @@
       background-color: var(--button-hover-bg);
     }
     
+    /* Orientation Toggle Styling */
+    .orientation-toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background-color: var(--button-bg);
+      border: none;
+      border-radius: 25px;
+      color: var(--text-color);
+      padding: var(--button-padding);
+      cursor: pointer;
+      transition: background-color 0.3s;
+      font-size: var(--button-font-size);
+      min-width: 160px;
+      text-align: center;
+    }
+    
+    .orientation-toggle:hover {
+      background-color: var(--button-hover-bg);
+    }
+    
     /* FPS Counter */
     #fps-counter {
       position: fixed;
@@ -199,7 +220,7 @@
     
     /* Responsive adjustments */
     @media (max-width: 600px) {
-      .control-button {
+      .control-button, .orientation-toggle {
         padding: 10px 20px;
         font-size: 14px;
         min-width: 100px;
@@ -251,6 +272,7 @@
   <div class="controls">
     <button class="control-button" id="change-camera" aria-label="Change Camera">Change Camera</button>
     <button class="control-button" id="change-resolution" aria-label="Change Resolution">Change Resolution</button>
+    <button class="orientation-toggle" id="change-orientation" aria-label="Change Orientation">Orientation: Landscape</button>
   </div>
   
   <!-- Modal -->
@@ -372,32 +394,19 @@
         let currentStream = null;
         let currentCameraIndex = parseInt(localStorage.getItem('currentCameraIndex')) || 0;
         let currentResolution = JSON.parse(localStorage.getItem('currentResolution')) || { width: 1280, height: 720 };
+        let currentOrientation = localStorage.getItem('currentOrientation') || 'landscape';
         let cameras = [];
         let isChangingStream = false;
         let debounceTimeout;
         let player = null;
         
-        const baseResolutions = [
-          { label: '1280x720', width: 1280, height: 720 },
-          { label: '1920x1080', width: 1920, height: 1080 },
-          { label: '640x480', width: 640, height: 480 }
+        const resolutions = [
+          { label: '480p (640x480)', width: 640, height: 480 },
+          { label: '720p (1280x720)', width: 1280, height: 720 },
+          { label: '1080p (1920x1080)', width: 1920, height: 1080 },
+          { label: '2K (2560x1440)', width: 2560, height: 1440 },
+          { label: '4K (3840x2160)', width: 3840, height: 2160 }
         ];
-        
-        const getOrientation = () => {
-          return window.matchMedia("(orientation: portrait)").matches ? 'portrait' : 'landscape';
-        };
-        
-        const getAdjustedResolutions = () => {
-          const orientation = getOrientation();
-          if (orientation === 'portrait') {
-            return baseResolutions.map(res => ({
-              label: `${res.height}x${res.width}`,
-              width: res.width,
-              height: res.height
-            }));
-          }
-          return baseResolutions;
-        };
         
         const initializeVideoJS = () => {
           if (!player) {
@@ -429,9 +438,8 @@
         };
         
         const getSupportedResolutions = async () => {
-          const adjustedResolutions = getAdjustedResolutions();
           const supportedResolutions = [];
-          for (const res of adjustedResolutions) {
+          for (const res of resolutions) {
             try {
               const testConstraints = {
                 video: {
@@ -453,10 +461,9 @@
         };
         
         const displayStreamSettings = (settings) => {
-          const orientation = getOrientation();
           let displayWidth = settings.width;
           let displayHeight = settings.height;
-          if (orientation === 'portrait') {
+          if (currentOrientation === 'portrait') {
             [displayWidth, displayHeight] = [settings.height, settings.width];
           }
           const message = `Current Resolution: ${displayWidth}x${displayHeight}, FPS: ${settings.frameRate}`;
@@ -478,14 +485,12 @@
               currentStream.getTracks().forEach(track => track.stop());
             }
             
-            const orientation = getOrientation();
-            
             const constraints = {
               video: {
                 deviceId: cameras[currentCameraIndex]?.deviceId ? { exact: cameras[currentCameraIndex].deviceId } : undefined,
                 facingMode: 'environment',
-                width: orientation === 'portrait' ? { ideal: currentResolution.height } : { ideal: currentResolution.width },
-                height: orientation === 'portrait' ? { ideal: currentResolution.width } : { ideal: currentResolution.height },
+                width: currentOrientation === 'portrait' ? { ideal: currentResolution.height } : { ideal: currentResolution.width },
+                height: currentOrientation === 'portrait' ? { ideal: currentResolution.width } : { ideal: currentResolution.height },
                 frameRate: { ideal: 120, max: 120 }
               }
             };
@@ -511,7 +516,7 @@
             // Adjust actual resolution based on orientation
             let actualWidth = settings.width;
             let actualHeight = settings.height;
-            if (orientation === 'portrait') {
+            if (currentOrientation === 'portrait') {
               [actualWidth, actualHeight] = [settings.height, settings.width];
             }
             
@@ -564,12 +569,7 @@
           const resolutionOptions = supportedResolutions.map(res => ({
             label: res.label,
             onClick: async () => {
-              const orientation = getOrientation();
-              let selectedRes = res;
-              if (orientation === 'portrait') {
-                // Swap width and height to store in landscape
-                selectedRes = { width: res.height, height: res.width };
-              }
+              const selectedRes = res;
               currentResolution = { width: selectedRes.width, height: selectedRes.height };
               localStorage.setItem('currentResolution', JSON.stringify(currentResolution));
               Modal.close();
@@ -578,6 +578,14 @@
           }));
           
           Modal.show('Select a resolution:', resolutionOptions);
+        };
+        
+        const switchOrientation = async () => {
+          currentOrientation = currentOrientation === 'landscape' ? 'portrait' : 'landscape';
+          localStorage.setItem('currentOrientation', currentOrientation);
+          const orientationButton = document.getElementById('change-orientation');
+          orientationButton.textContent = `Orientation: ${currentOrientation.charAt(0).toUpperCase() + currentOrientation.slice(1)}`;
+          await startStream();
         };
         
         const debounce = (func, delay = 300) => {
@@ -599,7 +607,7 @@
           });
         };
         
-        return { init, switchCamera, switchResolution };
+        return { init, switchCamera, switchResolution, switchOrientation };
       })();
       
       // Permissions Module
@@ -666,6 +674,7 @@
         
         document.getElementById('change-camera').addEventListener('click', CameraStream.switchCamera);
         document.getElementById('change-resolution').addEventListener('click', debounce(CameraStream.switchResolution));
+        document.getElementById('change-orientation').addEventListener('click', debounce(CameraStream.switchOrientation));
       });
       
       // Debounce function outside modules to be accessible

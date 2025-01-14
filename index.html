@@ -421,18 +421,21 @@
 
         let currentStream = null;
         let currentCameraIndex = 0;
-        // Default to a single resolution if user hasn't chosen
-        // (But we will now store orientation info too)
-        let currentResolution = { width: 1280, height: 720, orientation: 'landscape', label: 'Landscape 1280x720' };
+        
+        // Default resolution if user hasn't yet selected one
+        let currentResolution = {
+          width: 1280,
+          height: 720,
+          label: 'Landscape 1280x720',
+          orientation: 'landscape'
+        };
+        
         let cameras = [];
         let isChangingStream = false;
         let debounceTimeout;
         let player = null;
         
-        // Track if user selected a resolution manually
-        let wasManualResolutionSelected = false;
-        
-        // Updated resolutions array with orientation property
+        // We keep orientation purely as a label now; we won't force it in constraints
         const resolutions = [
           { label: 'Portrait 480x640', width: 480, height: 640, orientation: 'portrait' },
           { label: 'Landscape 640x480', width: 640, height: 480, orientation: 'landscape' },
@@ -446,7 +449,7 @@
           { label: 'Landscape 3840x2160', width: 3840, height: 2160, orientation: 'landscape' }
         ];
         
-        // Orientation detection for indicator only, no effect on resolution constraints
+        // Orientation detection for indicator only
         const getDeviceOrientation = () => {
           if (window.screen.orientation && window.screen.orientation.type) {
             return window.screen.orientation.type.startsWith('portrait') ? 'portrait' : 'landscape';
@@ -454,8 +457,6 @@
           return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
         };
         
-        // Because we're not forcing orientation-based resolution strictly,
-        // we only update the indicator. However, we can also check orientation mismatches.
         const updateOrientationIndicator = () => {
           const orientation = getDeviceOrientation();
           orientationValue.textContent = `Orientation: ${orientation}`;
@@ -522,16 +523,15 @@
               currentStream.getTracks().forEach(track => track.stop());
             }
             
-            // Adjust constraints based on the resolution's intended orientation
-            const isPortrait = currentResolution.orientation === 'portrait';
+            // No forced orientation logic—use the chosen width and height exactly
             const constraints = {
               video: {
                 deviceId: cameras[currentCameraIndex]?.deviceId
                   ? { exact: cameras[currentCameraIndex].deviceId }
                   : undefined,
                 facingMode: 'environment',
-                width: isPortrait ? { ideal: currentResolution.width } : { ideal: currentResolution.height },
-                height: isPortrait ? { ideal: currentResolution.height } : { ideal: currentResolution.width },
+                width: { ideal: currentResolution.width },
+                height: { ideal: currentResolution.height },
                 frameRate: { ideal: 120, max: 120 }
               }
             };
@@ -555,21 +555,13 @@
             // Display actual settings to user
             displayStreamSettings(settings);
             
-            // Warn if orientation mismatch is detected
+            // If the device did not provide the exact requested resolution, we show a warning
             if (
-              (isPortrait && settings.width > settings.height) ||
-              (!isPortrait && settings.width < settings.height)
+              (settings.width !== currentResolution.width && settings.height !== currentResolution.height) &&
+              (settings.width !== currentResolution.height && settings.height !== currentResolution.width)
             ) {
-              console.warn(
-                `Mismatch detected: Resolution ${settings.width}x${settings.height} does not match intended orientation (${currentResolution.orientation}).`
-              );
-            }
-            
-            // Warn user if the resolution isn't exactly the same as requested
-            if ((settings.width !== currentResolution.width && settings.height !== currentResolution.height) ||
-                (settings.width !== currentResolution.height && settings.height !== currentResolution.width)) {
               Modal.show(
-                `Requested resolution ${currentResolution.width}x${currentResolution.height} may not be supported. Using ${settings.width}x${settings.height} instead.`,
+                `Requested ${currentResolution.width}x${currentResolution.height}, got ${settings.width}x${settings.height} instead.`,
                 [{ label: 'OK', onClick: Modal.close }]
               );
               console.warn(`Resolution mismatch: Requested ${currentResolution.width}x${currentResolution.height}, got ${settings.width}x${settings.height}`);
@@ -617,7 +609,6 @@
           const resolutionOptions = resolutions.map(res => ({
             label: res.label,
             onClick: async () => {
-              wasManualResolutionSelected = true;
               currentResolution = { 
                 width: res.width, 
                 height: res.height, 
@@ -640,35 +631,17 @@
           };
         };
         
+        // Orientation change no longer forces a resolution change; 
+        // we only update the indicator & possibly resize if needed.
         const handleOrientationChange = () => {
           console.log('Orientation change detected.');
-          const currentOrientation = getDeviceOrientation();
-          const isPortrait = currentOrientation === 'portrait';
-          
-          // If our current resolution orientation doesn't match the device orientation,
-          // pick a matching orientation from our resolutions array.
-          if ((isPortrait && currentResolution.orientation === 'landscape') ||
-              (!isPortrait && currentResolution.orientation === 'portrait')) {
-            // Find a resolution that matches the new orientation
-            const matchingResolution = resolutions.find((res) => res.orientation === currentOrientation);
-            if (matchingResolution) {
-              currentResolution = {
-                width: matchingResolution.width,
-                height: matchingResolution.height,
-                orientation: matchingResolution.orientation,
-                label: matchingResolution.label
-              };
-              console.log(`Switching to ${currentResolution.label} due to orientation change.`);
-            }
-          }
-          
+          updateOrientationIndicator();
           resizeVideo();
-          startStream();
         };
         
         const init = async () => {
           await getCameras();
-          // Start streaming with the default resolution (1280x720, landscape)
+          // Start streaming with the default resolution unless the user picks otherwise
           await startStream();
           
           // Listen for resize events (covers orientation changes in some browsers)

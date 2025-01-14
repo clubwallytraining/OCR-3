@@ -377,11 +377,27 @@
         let debounceTimeout;
         let player = null;
         
-        const resolutions = [
+        const baseResolutions = [
           { label: '1280x720', width: 1280, height: 720 },
           { label: '1920x1080', width: 1920, height: 1080 },
           { label: '640x480', width: 640, height: 480 }
         ];
+        
+        const getOrientation = () => {
+          return window.matchMedia("(orientation: portrait)").matches ? 'portrait' : 'landscape';
+        };
+        
+        const getAdjustedResolutions = () => {
+          const orientation = getOrientation();
+          if (orientation === 'portrait') {
+            return baseResolutions.map(res => ({
+              label: `${res.height}x${res.width}`,
+              width: res.width,
+              height: res.height
+            }));
+          }
+          return baseResolutions;
+        };
         
         const initializeVideoJS = () => {
           if (!player) {
@@ -413,8 +429,9 @@
         };
         
         const getSupportedResolutions = async () => {
+          const adjustedResolutions = getAdjustedResolutions();
           const supportedResolutions = [];
-          for (const res of resolutions) {
+          for (const res of adjustedResolutions) {
             try {
               const testConstraints = {
                 video: {
@@ -422,7 +439,7 @@
                   facingMode: 'environment',
                   width: { exact: res.width },
                   height: { exact: res.height },
-                  frameRate: { ideal: 120, max: 120 } // Retained original frame rate constraints
+                  frameRate: { ideal: 120, max: 120 }
                 }
               };
               const testStream = await navigator.mediaDevices.getUserMedia(testConstraints);
@@ -436,7 +453,13 @@
         };
         
         const displayStreamSettings = (settings) => {
-          const message = `Current Resolution: ${settings.width}x${settings.height}, FPS: ${settings.frameRate}`;
+          const orientation = getOrientation();
+          let displayWidth = settings.width;
+          let displayHeight = settings.height;
+          if (orientation === 'portrait') {
+            [displayWidth, displayHeight] = [settings.height, settings.width];
+          }
+          const message = `Current Resolution: ${displayWidth}x${displayHeight}, FPS: ${settings.frameRate}`;
           Modal.show(message, [
             { label: 'OK', onClick: Modal.close }
           ]);
@@ -455,13 +478,15 @@
               currentStream.getTracks().forEach(track => track.stop());
             }
             
+            const orientation = getOrientation();
+            
             const constraints = {
               video: {
                 deviceId: cameras[currentCameraIndex]?.deviceId ? { exact: cameras[currentCameraIndex].deviceId } : undefined,
                 facingMode: 'environment',
-                width: { ideal: currentResolution.width },
-                height: { ideal: currentResolution.height },
-                frameRate: { ideal: 120, max: 120 } // Retained original frame rate constraints
+                width: orientation === 'portrait' ? { ideal: currentResolution.height } : { ideal: currentResolution.width },
+                height: orientation === 'portrait' ? { ideal: currentResolution.width } : { ideal: currentResolution.height },
+                frameRate: { ideal: 120, max: 120 }
               }
             };
             
@@ -483,8 +508,15 @@
             // Display actual settings to user
             displayStreamSettings(settings);
             
-            if (settings.width !== currentResolution.width || settings.height !== currentResolution.height) {
-              Modal.show(`Requested resolution ${currentResolution.width}x${currentResolution.height} not supported. Using ${settings.width}x${settings.height} instead.`, [
+            // Adjust actual resolution based on orientation
+            let actualWidth = settings.width;
+            let actualHeight = settings.height;
+            if (orientation === 'portrait') {
+              [actualWidth, actualHeight] = [settings.height, settings.width];
+            }
+            
+            if (actualWidth !== currentResolution.width || actualHeight !== currentResolution.height) {
+              Modal.show(`Requested resolution ${currentResolution.width}x${currentResolution.height} not supported. Using ${actualWidth}x${actualHeight} instead.`, [
                 { label: 'OK', onClick: Modal.close }
               ]);
             }
@@ -532,7 +564,13 @@
           const resolutionOptions = supportedResolutions.map(res => ({
             label: res.label,
             onClick: async () => {
-              currentResolution = { width: res.width, height: res.height };
+              const orientation = getOrientation();
+              let selectedRes = res;
+              if (orientation === 'portrait') {
+                // Swap width and height to store in landscape
+                selectedRes = { width: res.height, height: res.width };
+              }
+              currentResolution = { width: selectedRes.width, height: selectedRes.height };
               localStorage.setItem('currentResolution', JSON.stringify(currentResolution));
               Modal.close();
               await startStream();
@@ -553,6 +591,9 @@
           await getCameras();
           await startStream();
           window.addEventListener('resize', resizeVideo);
+          window.addEventListener('orientationchange', debounce(async () => {
+            await startStream();
+          }, 500));
           navigator.mediaDevices.addEventListener('devicechange', async () => {
             await getCameras();
           });

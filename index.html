@@ -432,13 +432,20 @@
                 video: {
                   deviceId: cameras[currentCameraIndex]?.deviceId ? { exact: cameras[currentCameraIndex].deviceId } : undefined,
                   facingMode: 'environment',
-                  width: { exact: res.width },
-                  height: { exact: res.height },
-                  frameRate: { ideal: 120, max: 120 } // Retained original frame rate constraints
+                  width: { ideal: res.width },
+                  height: { ideal: res.height },
+                  frameRate: { ideal: 60, max: 60 } // Adjusted frame rate constraints
                 }
               };
               const testStream = await navigator.mediaDevices.getUserMedia(testConstraints);
-              supportedResolutions.push(res);
+              const videoTrack = testStream.getVideoTracks()[0];
+              const settings = videoTrack.getSettings();
+              // Check if the resolution is approximately what we requested
+              const widthSupported = Math.abs(settings.width - res.width) <= 100;
+              const heightSupported = Math.abs(settings.height - res.height) <= 100;
+              if (widthSupported && heightSupported) {
+                supportedResolutions.push(res);
+              }
               testStream.getTracks().forEach(track => track.stop());
             } catch (e) {
               console.warn(`Resolution ${res.label} not supported.`);
@@ -473,7 +480,7 @@
                 facingMode: 'environment',
                 width: { ideal: currentResolution.width },
                 height: { ideal: currentResolution.height },
-                frameRate: { ideal: 120, max: 120 } // Retained original frame rate constraints
+                frameRate: { ideal: 60, max: 60 } // Adjusted frame rate constraints
               }
             };
             
@@ -496,7 +503,7 @@
             displayStreamSettings(settings);
             
             if (settings.width !== currentResolution.width || settings.height !== currentResolution.height) {
-              Modal.show(`Requested resolution ${currentResolution.width}x${currentResolution.height} not supported. Using ${settings.width}x${settings.height} instead.`, [
+              Modal.show(`Requested resolution ${currentResolution.label} not supported. Using ${settings.width}x${settings.height} instead.`, [
                 { label: 'OK', onClick: Modal.close }
               ]);
             }
@@ -544,7 +551,7 @@
           const resolutionOptions = supportedResolutions.map(res => ({
             label: res.label,
             onClick: async () => {
-              currentResolution = { width: res.width, height: res.height };
+              currentResolution = res;
               Modal.close();
               await startStream();
             }
@@ -569,7 +576,11 @@
           determineOrientation();
           await getCameras();
           if (cameras.length > 0) {
-            currentResolution = availableResolutions[0]; // Set default resolution
+            // Attempt to set the highest available resolution as default
+            availableResolutions.sort((a, b) => {
+              return (b.width * b.height) - (a.width * a.height);
+            });
+            currentResolution = availableResolutions[0]; // Set default resolution to highest
             await startStream();
           }
           window.addEventListener('resize', () => {

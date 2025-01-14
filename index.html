@@ -374,30 +374,58 @@
         const loadingIndicator = document.getElementById('loading-indicator');
         let currentStream = null;
         let currentCameraIndex = parseInt(localStorage.getItem('currentCameraIndex')) || 0;
-        let currentResolution = JSON.parse(localStorage.getItem('currentResolution')) || { width: 1280, height: 720 };
+        let currentResolution = JSON.parse(localStorage.getItem('currentResolution')) || null; // Will be set based on orientation
         let cameras = [];
         let isChangingStream = false;
         let debounceTimeout;
         let player = null;
         
-        // Updated Resolutions as per requirements
+        // Updated Resolutions as per requirements (Reversed Portrait vs Landscape)
         const resolutions = [
           // 480p
-          { label: 'Landscape 640x480', width: 640, height: 480 },
-          { label: 'Portrait 480x640', width: 480, height: 640 },
+          { label: 'Portrait 640x480', width: 480, height: 640 },
+          { label: 'Landscape 480x640', width: 640, height: 480 },
           // 720p
-          { label: 'Landscape 1280x720', width: 1280, height: 720 },
-          { label: 'Portrait 720x1280', width: 720, height: 1280 },
+          { label: 'Portrait 1280x720', width: 720, height: 1280 },
+          { label: 'Landscape 720x1280', width: 1280, height: 720 },
           // 1080p
-          { label: 'Landscape 1920x1080', width: 1920, height: 1080 },
-          { label: 'Portrait 1080x1920', width: 1080, height: 1920 },
+          { label: 'Portrait 1920x1080', width: 1080, height: 1920 },
+          { label: 'Landscape 1080x1920', width: 1920, height: 1080 },
           // 2K
-          { label: 'Landscape 2560x1440', width: 2560, height: 1440 },
-          { label: 'Portrait 1440x2560', width: 1440, height: 2560 },
+          { label: 'Portrait 2560x1440', width: 1440, height: 2560 },
+          { label: 'Landscape 1440x2560', width: 2560, height: 1440 },
           // 4K
-          { label: 'Landscape 3840x2160', width: 3840, height: 2160 },
-          { label: 'Portrait 2160x3840', width: 2160, height: 3840 }
+          { label: 'Portrait 3840x2160', width: 2160, height: 3840 },
+          { label: 'Landscape 2160x3840', width: 3840, height: 2160 }
         ];
+        
+        // Function to detect device orientation
+        const getDeviceOrientation = () => {
+          if (window.matchMedia("(orientation: portrait)").matches) {
+            return 'portrait';
+          }
+          if (window.matchMedia("(orientation: landscape)").matches) {
+            return 'landscape';
+          }
+          // Fallback
+          return 'portrait';
+        };
+        
+        // Function to set default resolution based on orientation
+        const setDefaultResolution = () => {
+          if (!currentResolution) {
+            const orientation = getDeviceOrientation();
+            const defaultRes = resolutions.find(res => {
+              if (orientation === 'portrait') {
+                return res.label.startsWith('Portrait');
+              } else {
+                return res.label.startsWith('Landscape');
+              }
+            });
+            currentResolution = defaultRes || { width: 1280, height: 720 }; // Fallback to 720p Landscape
+            localStorage.setItem('currentResolution', JSON.stringify(currentResolution));
+          }
+        };
         
         const initializeVideoJS = () => {
           if (!player) {
@@ -542,6 +570,7 @@
         
         const init = async () => {
           await getCameras();
+          setDefaultResolution(); // Set resolution based on device orientation
           await startStream();
           window.addEventListener('resize', resizeVideo);
           navigator.mediaDevices.addEventListener('devicechange', async () => {

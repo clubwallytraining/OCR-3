@@ -9,7 +9,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Fullscreen Camera Stream</title>
   
-  <!-- Include Video.js CSS without integrity and crossorigin checks -->
+  <!-- Include Video.js CSS (no integrity checks here) -->
   <link
     href="https://vjs.zencdn.net/8.0.4/video-js.css"
     rel="stylesheet"
@@ -261,7 +261,7 @@
     }
   </style>
   
-  <!-- Video.js Library without integrity and crossorigin checks -->
+  <!-- Video.js Library (no integrity checks here) -->
   <script
     src="https://vjs.zencdn.net/8.0.4/video.min.js"
     defer
@@ -418,15 +418,14 @@
         const loadingIndicator = document.getElementById('loading-indicator');
         const orientationValue = document.getElementById('orientation-value');
         const orientationCircle = document.getElementById('orientation-circle');
-
+        
         let currentStream = null;
         let currentCameraIndex = 0;
-        
-        // Default resolution, note we've swapped the label only:
+        // Default resolution
         let currentResolution = {
           width: 1280,
           height: 720,
-          label: 'Portrait 1280x720', // Previously was "Landscape 1280x720"
+          label: 'Portrait 1280x720',
           orientation: 'landscape'
         };
         
@@ -435,31 +434,34 @@
         let debounceTimeout;
         let player = null;
         
-        // Swap only the labels below, keep orientation property and dimensions the same.
+        // Sample resolutions with swapped labels
         const resolutions = [
-          // Old "Portrait 480x640" -> new label "Landscape 480x640"
           { label: 'Landscape 480x640', width: 480, height: 640, orientation: 'portrait' },
-          // Old "Landscape 640x480" -> new label "Portrait 640x480"
           { label: 'Portrait 640x480', width: 640, height: 480, orientation: 'landscape' },
-          // Old "Portrait 720x1280" -> new label "Landscape 720x1280"
           { label: 'Landscape 720x1280', width: 720, height: 1280, orientation: 'portrait' },
-          // Old "Landscape 1280x720" -> new label "Portrait 1280x720"
           { label: 'Portrait 1280x720', width: 1280, height: 720, orientation: 'landscape' },
-          // Old "Portrait 1080x1920" -> new label "Landscape 1080x1920"
           { label: 'Landscape 1080x1920', width: 1080, height: 1920, orientation: 'portrait' },
-          // Old "Landscape 1920x1080" -> new label "Portrait 1920x1080"
           { label: 'Portrait 1920x1080', width: 1920, height: 1080, orientation: 'landscape' },
-          // Old "Portrait 1440x2560" -> new label "Landscape 1440x2560"
           { label: 'Landscape 1440x2560', width: 1440, height: 2560, orientation: 'portrait' },
-          // Old "Landscape 2560x1440" -> new label "Portrait 2560x1440"
           { label: 'Portrait 2560x1440', width: 2560, height: 1440, orientation: 'landscape' },
-          // Old "Portrait 2160x3840" -> new label "Landscape 2160x3840"
           { label: 'Landscape 2160x3840', width: 2160, height: 3840, orientation: 'portrait' },
-          // Old "Landscape 3840x2160" -> new label "Portrait 3840x2160"
           { label: 'Portrait 3840x2160', width: 3840, height: 2160, orientation: 'landscape' }
         ];
         
-        // Orientation detection for indicator only
+        // Attempt constraints with 60fps first, fallback to 30fps on OverconstrainedError
+        async function getUserMediaWithFallback(constraints60, constraints30) {
+          try {
+            return await navigator.mediaDevices.getUserMedia(constraints60);
+          } catch (err) {
+            if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
+              console.warn('60 FPS not supported; falling back to 30 FPS...');
+              return await navigator.mediaDevices.getUserMedia(constraints30);
+            }
+            // If it’s another error, throw it up
+            throw err;
+          }
+        }
+        
         const getDeviceOrientation = () => {
           if (window.screen.orientation && window.screen.orientation.type) {
             return window.screen.orientation.type.startsWith('portrait') ? 'portrait' : 'landscape';
@@ -493,7 +495,6 @@
         };
         
         const resizeVideo = () => {
-          // With object-fit: cover, manual resizing isn't essential, but we log for clarity
           console.log('Window resized or orientation changed; adjusting video layout if needed.');
         };
         
@@ -528,13 +529,14 @@
             updateOrientationIndicator();
             console.log('Starting stream...');
             
+            // Stop any previous streams
             if (currentStream) {
               console.log('Stopping previous stream tracks.');
               currentStream.getTracks().forEach(track => track.stop());
             }
             
-            // Use the chosen width/height exactly as is; no forced orientation logic:
-            const constraints = {
+            // Constraints for 60 FPS attempt
+            const constraints60 = {
               video: {
                 deviceId: cameras[currentCameraIndex]?.deviceId
                   ? { exact: cameras[currentCameraIndex].deviceId }
@@ -542,14 +544,27 @@
                 facingMode: 'environment',
                 width: { ideal: currentResolution.width },
                 height: { ideal: currentResolution.height },
-                frameRate: { ideal: 120, max: 120 }
+                frameRate: { ideal: 60, max: 60 }
               }
             };
             
-            console.log('Requesting media with constraints:', constraints);
-            currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+            // Constraints for 30 FPS fallback
+            const constraints30 = {
+              video: {
+                deviceId: cameras[currentCameraIndex]?.deviceId
+                  ? { exact: cameras[currentCameraIndex].deviceId }
+                  : undefined,
+                facingMode: 'environment',
+                width: { ideal: currentResolution.width },
+                height: { ideal: currentResolution.height },
+                frameRate: { ideal: 30, max: 30 }
+              }
+            };
             
-            // Assign the stream to the video element before initializing Video.js
+            console.log('Attempting 60 FPS...');
+            currentStream = await getUserMediaWithFallback(constraints60, constraints30);
+            
+            // Assign the stream to the video element
             videoElement.srcObject = currentStream;
             await videoElement.play();
             console.log('Stream started and video playing.');
@@ -557,7 +572,7 @@
             // Initialize Video.js once
             initializeVideoJS();
             
-            // Verify and log actual settings
+            // Log actual settings
             const videoTrack = currentStream.getVideoTracks()[0];
             const settings = videoTrack.getSettings();
             console.log(`Actual resolution: ${settings.width}x${settings.height}, FPS: ${settings.frameRate}`);
@@ -574,21 +589,21 @@
                 `Requested ${currentResolution.width}x${currentResolution.height}, got ${settings.width}x${settings.height} instead.`,
                 [{ label: 'OK', onClick: Modal.close }]
               );
-              console.warn(`Resolution mismatch: Requested ${currentResolution.width}x${currentResolution.height}, got ${settings.width}x${settings.height}`);
+              console.warn(
+                `Resolution mismatch: Requested ${currentResolution.width}x${currentResolution.height}, got ${settings.width}x${settings.height}`
+              );
             }
           } catch (error) {
             console.error('Error initializing video stream:', error);
-            if (error.name === 'OverconstrainedError' || error.name === 'ConstraintNotSatisfiedError') {
-              Modal.show(
-                `The selected resolution ${currentResolution.width}x${currentResolution.height} is not supported by your device. Please choose a different resolution.`,
-                [{ label: 'OK', onClick: Modal.close }]
-              );
-            } else if (error.name === 'NotAllowedError') {
+            if (error.name === 'NotAllowedError') {
               alert('Camera access was denied. Please enable it in your browser settings.');
             } else if (error.name === 'NotFoundError') {
               alert('No camera device found. Please connect a camera and try again.');
             } else {
-              alert('An unexpected error occurred while accessing the camera.');
+              Modal.show(
+                `An error occurred trying to use the camera. (${error.name || 'Unknown Error'})`,
+                [{ label: 'OK', onClick: Modal.close }]
+              );
             }
           } finally {
             loadingIndicator.style.display = 'none';
@@ -641,8 +656,6 @@
           };
         };
         
-        // Orientation change no longer forces a resolution change; 
-        // we only update the indicator & possibly resize if needed.
         const handleOrientationChange = () => {
           console.log('Orientation change detected.');
           updateOrientationIndicator();
@@ -651,16 +664,14 @@
         
         const init = async () => {
           await getCameras();
-          // Start streaming with the default resolution unless the user picks otherwise
+          // Start streaming with default resolution
           await startStream();
           
-          // Listen for resize events (covers orientation changes in some browsers)
+          // Listen for resize events
           window.addEventListener('resize', resizeVideo);
-          
-          // Listen for orientationchange specifically
+          // Listen for orientationchange
           window.addEventListener('orientationchange', handleOrientationChange);
-          
-          // Listen for device changes (e.g., new camera added)
+          // Listen for device changes
           navigator.mediaDevices.addEventListener('devicechange', async () => {
             await getCameras();
             console.log('Device change detected.');
@@ -739,7 +750,7 @@
         document.getElementById('change-resolution').addEventListener('click', debounce(CameraStream.switchResolution));
       });
       
-      // Debounce function outside modules to be accessible
+      // Debounce function outside modules
       function debounce(func, delay = 300) {
         let debounceTimeout;
         return function(...args) {

@@ -2,7 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- 
+    By using maximum-scale=1.0 and user-scalable=no, we help ensure that 
+    orientation-based resizing behaves more consistently on mobile devices.
+  -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
   <title>Fullscreen Camera Stream</title>
   
   <!-- Include Video.js CSS without integrity and crossorigin checks -->
@@ -280,8 +286,18 @@
     <span id="orientation-value">Orientation: --</span>
   </div>
   
-  <!-- Video Stream -->
-  <video id="camera-stream" class="video-js vjs-default-skin" autoplay muted playsinline></video>
+  <!-- 
+    Note: The "webkit-playsinline" attribute can help on iOS Safari 
+    to allow inline playback and avoid forced fullscreen.
+  -->
+  <video
+    id="camera-stream"
+    class="video-js vjs-default-skin"
+    autoplay
+    muted
+    playsinline
+    webkit-playsinline
+  ></video>
   
   <!-- Controls -->
   <div class="controls">
@@ -417,28 +433,25 @@
         
         // Resolutions with accurate labels
         const resolutions = [
-          // 480p
           { label: 'Portrait 480x640', width: 480, height: 640 },
           { label: 'Landscape 640x480', width: 640, height: 480 },
-          // 720p
           { label: 'Portrait 720x1280', width: 720, height: 1280 },
           { label: 'Landscape 1280x720', width: 1280, height: 720 },
-          // 1080p
           { label: 'Portrait 1080x1920', width: 1080, height: 1920 },
           { label: 'Landscape 1920x1080', width: 1920, height: 1080 },
-          // 2K
           { label: 'Portrait 1440x2560', width: 1440, height: 2560 },
           { label: 'Landscape 2560x1440', width: 2560, height: 1440 },
-          // 4K
           { label: 'Portrait 2160x3840', width: 2160, height: 3840 },
           { label: 'Landscape 3840x2160', width: 3840, height: 2160 }
         ];
         
-        // Function to detect device orientation
+        // More robust orientation detection, with a fallback:
         const getDeviceOrientation = () => {
-          const orientation = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
-          console.log(`Detected orientation based on window dimensions: ${orientation}`);
-          return orientation;
+          if (window.screen.orientation && window.screen.orientation.type) {
+            return window.screen.orientation.type.startsWith('portrait') ? 'portrait' : 'landscape';
+          }
+          // Fallback to window sizing if screen.orientation is not available
+          return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
         };
         
         // Function to set default resolution based on orientation
@@ -451,7 +464,7 @@
               return res.label.startsWith('Landscape');
             }
           });
-          currentResolution = defaultRes || { width: 1280, height: 720 }; // Fallback to 720p Landscape
+          currentResolution = defaultRes || { width: 1280, height: 720 };
           updateOrientationIndicator(orientation);
           console.log(`Set default resolution to: ${currentResolution.label}`);
         };
@@ -469,9 +482,9 @@
         };
         
         const resizeVideo = () => {
-          // Let the video element handle sizing with object-fit: cover
-          // This function can be used for additional custom resizing if needed
-          console.log('Window resized.');
+          // With object-fit: cover, we often don't need manual resizing,
+          // but you can place additional adjustments here if necessary.
+          console.log('Window resized or orientation changed; adjusting video layout if needed.');
         };
         
         const getCameras = async () => {
@@ -521,7 +534,7 @@
               currentStream.getTracks().forEach(track => track.stop());
             }
             
-            setDefaultResolution(); // Set resolution based on current orientation
+            setDefaultResolution(); // Adjust resolution based on orientation
             
             const constraints = {
               video: {
@@ -553,17 +566,19 @@
             displayStreamSettings(settings);
             
             if (settings.width !== currentResolution.width || settings.height !== currentResolution.height) {
-              Modal.show(`Requested resolution ${currentResolution.width}x${currentResolution.height} not supported. Using ${settings.width}x${settings.height} instead.`, [
-                { label: 'OK', onClick: Modal.close }
-              ]);
+              Modal.show(
+                `Requested resolution ${currentResolution.width}x${currentResolution.height} not supported. Using ${settings.width}x${settings.height} instead.`,
+                [{ label: 'OK', onClick: Modal.close }]
+              );
               console.warn(`Resolution mismatch: Requested ${currentResolution.width}x${currentResolution.height}, Got ${settings.width}x${settings.height}`);
             }
           } catch (error) {
             console.error('Error initializing video stream:', error);
             if (error.name === 'OverconstrainedError' || error.name === 'ConstraintNotSatisfiedError') {
-              Modal.show(`The selected resolution ${currentResolution.width}x${currentResolution.height} is not supported by your device. Please choose a different resolution.`, [
-                { label: 'OK', onClick: Modal.close }
-              ]);
+              Modal.show(
+                `The selected resolution ${currentResolution.width}x${currentResolution.height} is not supported by your device. Please choose a different resolution.`,
+                [{ label: 'OK', onClick: Modal.close }]
+              );
             } else if (error.name === 'NotAllowedError') {
               alert('Camera access was denied. Please enable it in your browser settings.');
             } else if (error.name === 'NotFoundError') {
@@ -619,16 +634,23 @@
         
         const handleOrientationChange = () => {
           console.log('Orientation change detected.');
-          setDefaultResolution();
+          resizeVideo();
+          // Re-initialize the stream with orientation-specific resolution
           startStream();
         };
         
         const init = async () => {
           await getCameras();
-          setDefaultResolution(); // Set resolution based on device orientation
+          setDefaultResolution(); 
           await startStream();
+          
+          // Listen for resize events (covers orientation changes in some browsers)
           window.addEventListener('resize', resizeVideo);
+          
+          // Listen for orientationchange (primarily iOS / older Android)
           window.addEventListener('orientationchange', handleOrientationChange);
+          
+          // Listen for device changes (new camera, etc.)
           navigator.mediaDevices.addEventListener('devicechange', async () => {
             await getCameras();
             console.log('Device change detected.');
@@ -673,15 +695,18 @@
         const requestCameraAccess = async () => {
           try {
             await navigator.mediaDevices.getUserMedia({ video: true });
-            Modal.show('Camera access granted. The page will now refresh to start the camera stream.', [
-              {
-                label: 'Continue',
-                onClick: () => {
-                  Modal.close();
-                  location.reload();
+            Modal.show(
+              'Camera access granted. The page will now refresh to start the camera stream.',
+              [
+                {
+                  label: 'Continue',
+                  onClick: () => {
+                    Modal.close();
+                    location.reload();
+                  }
                 }
-              }
-            ]);
+              ]
+            );
           } catch (error) {
             console.error('Error requesting camera access:', error);
             Modal.show('Camera access is required to use this application.');

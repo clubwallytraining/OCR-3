@@ -7,13 +7,16 @@
     behaves consistently on mobile devices.
   -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Fullscreen Camera Stream (No Fallback)</title>
+  <title>Fullscreen Camera Stream + OpenCV (MediaStreamTrackProcessor)</title>
   
   <!-- Video.js CSS (no integrity checks) -->
   <link
     href="https://vjs.zencdn.net/8.0.4/video-js.css"
     rel="stylesheet"
   >
+
+  <!-- OpenCV.js from official docs/cdn (example version 4.6.0). Adjust version as needed. -->
+  <script src="https://docs.opencv.org/4.6.0/opencv.js" defer></script>
   
   <!-- Dark Theme Styling -->
   <style>
@@ -196,7 +199,7 @@
       border: 1px solid #888;
       border-radius: 10px;
       width: 80%;
-      max-width: 500px;
+      max-width: 600px;
       position: relative;
       text-align: center;
     }
@@ -249,7 +252,57 @@
     .modal-option:hover {
       background-color: var(--button-hover-bg);
     }
+
+    /* Preprocessing Modal Additional Controls */
+    .preprocessing-row {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .preprocessing-row input[type="checkbox"] {
+      margin-right: 10px;
+    }
+    .preprocessing-slider {
+      margin: 0 10px;
+      flex-grow: 1;
+    }
+    .preprocessing-value {
+      width: 30px;
+      text-align: right;
+    }
+    .worker-options label {
+      margin-right: 15px;
+    }
     
+    /* The overlay canvas (processed frames) */
+    #overlayCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none; /* so clicks pass through to underlying elements, if desired */
+      z-index: 1; 
+    }
+
+    /* The hidden canvas used to extract frame pixel data */
+    #frameCanvas {
+      display: none;
+    }
+
+    /* The OpenCV status indicator (red => loading, green => ready) */
+    #opencv-status {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 2;
+      font-size: 16px;
+      font-weight: bold;
+      color: red; /* default to red (loading) */
+      background-color: rgba(0,0,0,0.6);
+      padding: 8px 12px;
+      border-radius: 5px;
+    }
+
     /* Responsive adjustments */
     @media (max-width: 600px) {
       .control-button {
@@ -316,8 +369,11 @@
     <div class="camera-fps-indicator-circle" id="camera-fps-circle"></div>
     <span id="camera-fps-value">Camera FPS: --</span>
   </div>
-  
-  <!-- Video Stream -->
+
+  <!-- OpenCV Status Indicator (changes from red to green when loaded) -->
+  <div id="opencv-status">OpenCV</div>
+
+  <!-- Video Stream (background/preview) -->
   <video
     id="camera-stream"
     class="video-js vjs-default-skin"
@@ -326,15 +382,21 @@
     playsinline
     webkit-playsinline
   ></video>
-  
+
+  <!-- Overlay canvas for processed frames -->
+  <canvas id="overlayCanvas" width="640" height="480"></canvas>
+  <!-- Hidden canvas for extracting raw image pixels -->
+  <canvas id="frameCanvas" width="640" height="480"></canvas>
+
   <!-- Controls -->
   <div class="controls">
     <button class="control-button" id="change-camera" aria-label="Change Camera">Change Camera</button>
     <button class="control-button" id="change-resolution" aria-label="Change Resolution">Change Resolution</button>
     <button class="control-button" id="change-fps" aria-label="Change FPS">Change FPS</button>
+    <button class="control-button" id="preprocessing-button" aria-label="Preprocessing Controls">Preprocessing</button>
   </div>
   
-  <!-- Modal -->
+  <!-- Modal: Reused for camera/fps/res choices -->
   <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-content">
       <span class="close-button" id="modal-close" aria-label="Close Modal">&times;</span>
@@ -344,11 +406,239 @@
       </div>
     </div>
   </div>
+
+  <!-- Modal: Preprocessing Controls -->
+  <div id="preprocessing-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="preprocessing-modal-title">
+    <div class="modal-content">
+      <span class="close-button" id="preprocessing-modal-close" aria-label="Close Modal">&times;</span>
+      <h2 id="preprocessing-modal-title">Preprocessing Controls</h2>
+      
+      <div class="modal-options" id="preprocessing-options">
+
+        <!-- Grayscale -->
+        <div class="preprocessing-row">
+          <label>
+            <input type="checkbox" id="chkGrayscale" />
+            Grayscale
+          </label>
+        </div>
+
+        <!-- Threshold -->
+        <div class="preprocessing-row">
+          <label>
+            <input type="checkbox" id="chkThreshold" />
+            Threshold 
+          </label>
+          <input type="range" id="sliderThreshold" class="preprocessing-slider" min="0" max="100" value="50" />
+          <span id="valThreshold" class="preprocessing-value">50</span>
+        </div>
+
+        <!-- Edge Detection (Canny) -->
+        <div class="preprocessing-row">
+          <label>
+            <input type="checkbox" id="chkEdges" />
+            Edge Detection
+          </label>
+          <input type="range" id="sliderEdges" class="preprocessing-slider" min="0" max="100" value="50" />
+          <span id="valEdges" class="preprocessing-value">50</span>
+        </div>
+
+        <!-- Highlights (simple morphological dilation) -->
+        <div class="preprocessing-row">
+          <label>
+            <input type="checkbox" id="chkHighlights" />
+            Highlights
+          </label>
+          <input type="range" id="sliderHighlights" class="preprocessing-slider" min="0" max="100" value="50" />
+          <span id="valHighlights" class="preprocessing-value">50</span>
+        </div>
+
+        <!-- Brightness -->
+        <div class="preprocessing-row">
+          <label>
+            <input type="checkbox" id="chkBrightness" />
+            Brightness
+          </label>
+          <input type="range" id="sliderBrightness" class="preprocessing-slider" min="0" max="100" value="50" />
+          <span id="valBrightness" class="preprocessing-value">50</span>
+        </div>
+
+        <hr style="width:100%; margin-top:20px;">
+
+        <!-- Web Worker Options (1, 2, or 4) -->
+        <div class="worker-options">
+          <label>Web Workers:</label>
+          <label><input type="radio" name="workerCount" value="1" checked>1</label>
+          <label><input type="radio" name="workerCount" value="2">2</label>
+          <label><input type="radio" name="workerCount" value="4">4</label>
+        </div>
+
+      </div>
+    </div>
+  </div>
   
-  <!-- JavaScript -->
+  <!-- Main JavaScript -->
   <script>
+    // =======================
+    // 1) OpenCV Initialization
+    // =======================
+
+    let opencvReady = false;
+    cv['onRuntimeInitialized'] = () => {
+      console.log('OpenCV is fully initialized');
+      opencvReady = true;
+      // Change the OpenCV status text color to green
+      const opencvStatus = document.getElementById('opencv-status');
+      opencvStatus.style.color = 'limegreen';
+    };
+
+    // Global object to store user’s preprocessing settings
+    const preprocessSettings = {
+      grayscale: { enabled: false },
+      threshold: { enabled: false, value: 50 },
+      edges: { enabled: false, value: 50 },
+      highlights: { enabled: false, value: 50 },
+      brightness: { enabled: false, value: 50 },
+      numWorkers: 1 // default
+    };
+
+    // =====================
+    // 2) Track Processor
+    // =====================
+
+    let trackProcessorReader = null;
+    let processingActive = false; // a flag to stop the loop if needed
+
+    // This function sets up the MediaStreamTrackProcessor and continuously reads frames
+    async function processCameraStreamWithTrackProcessor(stream) {
+      const track = stream.getVideoTracks()[0];
+
+      // If not supported, fallback to the old <video> approach or show an error
+      if (typeof MediaStreamTrackProcessor === 'undefined') {
+        console.warn('MediaStreamTrackProcessor is not supported in this browser. Fallback to <video> canvas approach.');
+        // fallback code if desired, or just keep <video> playing
+        return;
+      }
+
+      const processor = new MediaStreamTrackProcessor({ track });
+      trackProcessorReader = processor.readable.getReader();
+
+      processingActive = true;
+      while (processingActive) {
+        const result = await trackProcessorReader.read();
+        if (result.done) {
+          console.log('No more camera frames (stream ended).');
+          break;
+        }
+        const frame = result.value; // This is a VideoFrame
+        if (opencvReady) {
+          processFrameWithOpenCV(frame);
+        }
+        frame.close();
+      }
+    }
+
+    // ===============
+    // 3) Preprocessing
+    // ===============
+
+    function processFrameWithOpenCV(videoFrame) {
+      // Hidden canvas for extracting pixel data
+      const frameCanvas = document.getElementById('frameCanvas');
+      const ctx = frameCanvas.getContext('2d');
+
+      // Where we draw processed output
+      const overlayCanvas = document.getElementById('overlayCanvas');
+      const overlayCtx = overlayCanvas.getContext('2d');
+
+      // Size the hidden canvas to match the incoming frame
+      frameCanvas.width = videoFrame.displayWidth;
+      frameCanvas.height = videoFrame.displayHeight;
+
+      // For some browsers, drawImage(videoFrame) might not be supported directly.
+      // If so, you might need createImageBitmap(videoFrame), or videoFrame.copyTo(), etc.
+      try {
+        ctx.drawImage(videoFrame, 0, 0, frameCanvas.width, frameCanvas.height);
+      } catch (err) {
+        console.error('drawImage(VideoFrame) not supported:', err);
+        return;
+      }
+
+      // Extract ImageData
+      const imageData = ctx.getImageData(0, 0, frameCanvas.width, frameCanvas.height);
+
+      // Convert to an OpenCV Mat
+      let srcMat = cv.matFromImageData(imageData);
+
+      // ========== Apply effects ==========
+
+      // (A) Grayscale
+      if (preprocessSettings.grayscale.enabled) {
+        cv.cvtColor(srcMat, srcMat, cv.COLOR_RGBA2GRAY, 0);
+        // Convert back to RGBA so subsequent ops expecting 4 channels won't break
+        cv.cvtColor(srcMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
+      }
+
+      // (B) Threshold
+      if (preprocessSettings.threshold.enabled) {
+        let tVal = (preprocessSettings.threshold.value / 100) * 255;
+        cv.threshold(srcMat, srcMat, tVal, 255, cv.THRESH_BINARY);
+      }
+
+      // (C) Edge Detection (Canny)
+      if (preprocessSettings.edges.enabled) {
+        let eVal = preprocessSettings.edges.value; // 0..100
+        let t1 = eVal * 2.5; // 0..250
+        let t2 = t1 * 1.5;   // 0..375
+        let edgeMat = new cv.Mat();
+        cv.Canny(srcMat, edgeMat, t1, t2);
+        cv.cvtColor(edgeMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
+        edgeMat.delete();
+      }
+
+      // (D) Highlights (simple morphological dilation for demonstration)
+      if (preprocessSettings.highlights.enabled) {
+        let kSize = Math.max(1, Math.floor(preprocessSettings.highlights.value / 10)); 
+        let kernel = cv.Mat.ones(kSize, kSize, cv.CV_8U);
+        let highlightMat = new cv.Mat();
+        cv.dilate(srcMat, highlightMat, kernel);
+        highlightMat.copyTo(srcMat);
+        kernel.delete();
+        highlightMat.delete();
+      }
+
+      // (E) Brightness
+      if (preprocessSettings.brightness.enabled) {
+        let bVal = parseInt(preprocessSettings.brightness.value, 10);
+        // Map slider 0..100 -> offset range of -50..+50
+        let alpha = bVal - 50; 
+        cv.convertScaleAbs(srcMat, srcMat, 1, alpha);
+      }
+
+      // ========== End Effects ==========
+
+      // Convert back to ImageData
+      const processedData = new ImageData(
+        new Uint8ClampedArray(srcMat.data),
+        srcMat.cols,
+        srcMat.rows
+      );
+
+      // Resize overlayCanvas to match
+      overlayCanvas.width = srcMat.cols;
+      overlayCanvas.height = srcMat.rows;
+      overlayCtx.putImageData(processedData, 0, 0);
+
+      // Cleanup
+      srcMat.delete();
+    }
+
+    // =========================
+    // 4) The rest of your app
+    // =========================
+
     (function() {
-      // Helper to create DOM elements
+      // Helper to create DOM elements (unchanged from your code)
       const createElement = (tag, attrs = {}, ...children) => {
         const el = document.createElement(tag);
         for (const k in attrs) {
@@ -371,7 +661,7 @@
         });
         return el;
       };
-      
+
       // Simple Modal
       const Modal = (() => {
         const modal = document.getElementById('modal');
@@ -471,7 +761,7 @@
         let player = null;
         let debounceTimeout;
         
-        // Example resolution list (swapped labels as requested)
+        // Example resolution list (unchanged, but note labels are swapped)
         const resolutions = [
           { label: 'Landscape 480x640', width: 480, height: 640, orientation: 'portrait' },
           { label: 'Portrait 640x480', width: 640, height: 480, orientation: 'landscape' },
@@ -561,7 +851,6 @@
               currentStream.getTracks().forEach(t => t.stop());
             }
             
-            // Build constraints with EXACT user-chosen FPS. If it fails, we do NOT fallback.
             const constraints = {
               video: {
                 deviceId: cameras[currentCameraIndex]?.deviceId
@@ -573,7 +862,6 @@
                 frameRate: { ideal: userChosenFps, max: userChosenFps }
               }
             };
-            
             console.log('Requesting media with:', constraints);
             
             let newStream;
@@ -582,7 +870,7 @@
             } catch (err) {
               // If Overconstrained => show modal, do not fallback
               if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
-                console.error('Overconstrained: your device can’t do that FPS/res combo.');
+                console.error('Overconstrained: device can’t do that FPS/res combo.');
                 Modal.show(
                   `Your device does not support ${currentResolution.width}x${currentResolution.height} @ ${userChosenFps}fps.`,
                   [{ label: 'OK', onClick: Modal.close }]
@@ -594,17 +882,20 @@
             }
             
             currentStream = newStream;
+            // For a normal <video> preview:
             videoElement.srcObject = currentStream;
             await videoElement.play();
             
             console.log('Stream started, video playing');
             initializeVideoJS();
             
+            // Use the new MediaStreamTrackProcessor approach
+            processCameraStreamWithTrackProcessor(currentStream);
+            
             // Actual track settings
             const track = currentStream.getVideoTracks()[0];
             const s = track.getSettings();
             console.log(`Actual: ${s.width}x${s.height} @ ${s.frameRate}fps`);
-            
             updateCameraFpsIndicator(s.frameRate);
             displayStreamSettings(s);
             
@@ -789,24 +1080,85 @@
       
       // Initialize Everything
       document.addEventListener('DOMContentLoaded', () => {
-        FPSCounter.start();         // Start the rendering FPS loop
-        Permissions.init();         // Check camera perms, then init camera if granted
-        
+        // Start the rendering FPS loop
+        FPSCounter.start();
+
+        // Check camera perms, then init camera if granted
+        Permissions.init();
+
         // Hook up controls
-        document.getElementById('change-camera').addEventListener('click', CameraStream.switchCamera);
-        document.getElementById('change-resolution').addEventListener('click', debounce(CameraStream.switchResolution));
-        document.getElementById('change-fps').addEventListener('click', debounce(CameraStream.switchFps));
+        document.getElementById('change-camera')
+          .addEventListener('click', CameraStream.switchCamera);
+        document.getElementById('change-resolution')
+          .addEventListener('click', debounce(CameraStream.switchResolution));
+        document.getElementById('change-fps')
+          .addEventListener('click', debounce(CameraStream.switchFps));
+        
+        // Preprocessing modal open/close
+        const preprocessingModal = document.getElementById('preprocessing-modal');
+        document.getElementById('preprocessing-button').addEventListener('click', () => {
+          preprocessingModal.style.display = 'flex';
+        });
+        document.getElementById('preprocessing-modal-close').addEventListener('click', () => {
+          preprocessingModal.style.display = 'none';
+        });
+
+        // Attach event listeners for each effect
+        document.getElementById('chkGrayscale').addEventListener('change', (e) => {
+          preprocessSettings.grayscale.enabled = e.target.checked;
+        });
+        const sliderThreshold = document.getElementById('sliderThreshold');
+        sliderThreshold.addEventListener('input', (e) => {
+          let val = parseInt(e.target.value, 10);
+          document.getElementById('valThreshold').textContent = val;
+          preprocessSettings.threshold.value = val;
+        });
+        document.getElementById('chkThreshold').addEventListener('change', (e) => {
+          preprocessSettings.threshold.enabled = e.target.checked;
+        });
+
+        const sliderEdges = document.getElementById('sliderEdges');
+        sliderEdges.addEventListener('input', (e) => {
+          let val = parseInt(e.target.value, 10);
+          document.getElementById('valEdges').textContent = val;
+          preprocessSettings.edges.value = val;
+        });
+        document.getElementById('chkEdges').addEventListener('change', (e) => {
+          preprocessSettings.edges.enabled = e.target.checked;
+        });
+
+        const sliderHighlights = document.getElementById('sliderHighlights');
+        sliderHighlights.addEventListener('input', (e) => {
+          let val = parseInt(e.target.value, 10);
+          document.getElementById('valHighlights').textContent = val;
+          preprocessSettings.highlights.value = val;
+        });
+        document.getElementById('chkHighlights').addEventListener('change', (e) => {
+          preprocessSettings.highlights.enabled = e.target.checked;
+        });
+
+        const sliderBrightness = document.getElementById('sliderBrightness');
+        sliderBrightness.addEventListener('input', (e) => {
+          let val = parseInt(e.target.value, 10);
+          document.getElementById('valBrightness').textContent = val;
+          preprocessSettings.brightness.value = val;
+        });
+        document.getElementById('chkBrightness').addEventListener('change', (e) => {
+          preprocessSettings.brightness.enabled = e.target.checked;
+        });
+
+        // Web Worker count
+        const workerRadios = document.getElementsByName('workerCount');
+        workerRadios.forEach(radio => {
+          radio.addEventListener('change', (e) => {
+            preprocessSettings.numWorkers = parseInt(e.target.value, 10);
+            console.log('Selected workers:', preprocessSettings.numWorkers);
+            // You would initialize or re-initialize your web-workers here if needed
+          });
+        });
       });
-      
-      function debounce(func, delay = 300) {
-        let timeout;
-        return function(...args) {
-          clearTimeout(timeout);
-          timeout = setTimeout(() => func.apply(this, args), delay);
-        };
-      }
-      
     })();
+
   </script>
   
 </body>

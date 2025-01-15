@@ -15,6 +15,15 @@
     rel="stylesheet"
   >
   
+  <!-- OpenCV.js locally -->
+  <script src="./opencv.js" defer></script>
+  
+  <!-- Video.js Library (no integrity checks) -->
+  <script
+    src="https://vjs.zencdn.net/8.0.4/video.min.js"
+    defer
+  ></script>
+  
   <!-- Dark Theme Styling -->
   <style>
     :root {
@@ -331,6 +340,1077 @@
       }
     }
   </style>
+  
+  <!-- JavaScript -->
+  <script>
+    (function() {
+      // Global Flags
+      let opencvReady = false;
+      let cameraReady = false;
+      let preprocessSettings = {
+        grayscale: { enabled: false, value: 100 },
+        threshold: { enabled: false, value: 50 },
+        edges: { enabled: false, value: 50 },
+        highlights: { enabled: false, value: 50 },
+        brightness: { enabled: false, value: 50 },
+        workers: 1
+      };
+      
+      // OpenCV Indicator Element
+      const opencvIndicator = document.getElementById('opencv-indicator');
+
+      // Update OpenCV Indicator
+      const updateOpenCVIndicator = (status) => {
+        switch(status) {
+          case 'loading':
+            opencvIndicator.textContent = 'OpenCV: Loading...';
+            opencvIndicator.style.color = 'yellow';
+            break;
+          case 'ready':
+            opencvIndicator.textContent = 'OpenCV: Ready';
+            opencvIndicator.style.color = 'green';
+            break;
+          case 'error':
+            opencvIndicator.textContent = 'OpenCV: Failed to Load';
+            opencvIndicator.style.color = 'red';
+            break;
+          default:
+            opencvIndicator.textContent = 'OpenCV: Unknown Status';
+            opencvIndicator.style.color = 'red';
+        }
+      };
+
+      // Initialize OpenCV
+      updateOpenCVIndicator('loading');
+      cv['onRuntimeInitialized'] = () => {
+        console.log('OpenCV is fully initialized');
+        opencvReady = true;
+        updateOpenCVIndicator('ready');
+        if (cameraReady) {
+          CameraStream.startFrameProcessing();
+        }
+      };
+
+      // Handle OpenCV load error
+      cv['onRuntimeFailed'] = () => {
+        console.error('Failed to initialize OpenCV');
+        updateOpenCVIndicator('error');
+        Modal.show('Failed to load OpenCV.js. Please try refreshing the page.');
+      };
+
+      // Helper to create DOM elements
+      const createElement = (tag, attrs = {}, ...children) => {
+        const el = document.createElement(tag);
+        for (const k in attrs) {
+          if (k.startsWith('data-') || k.startsWith('aria-')) {
+            el.setAttribute(k, attrs[k]);
+          } else if (k === 'class') {
+            el.className = attrs[k];
+          } else if (k === 'style') {
+            el.style.cssText = attrs[k];
+          } else {
+            el[k] = attrs[k];
+          }
+        }
+        children.forEach(child => {
+          if (typeof child === 'string') {
+            el.appendChild(document.createTextNode(child));
+          } else if (child instanceof Node) {
+            el.appendChild(child);
+          }
+        });
+        return el;
+      };
+      
+      // Simple Modal
+      const Modal = (() => {
+        const modal = document.getElementById('modal');
+        const modalClose = document.getElementById('modal-close');
+        const modalMessage = document.getElementById('modal-message');
+        const modalOptions = document.getElementById('modal-options');
+        
+        const show = (message, options = []) => {
+          modalMessage.textContent = message;
+          modalOptions.innerHTML = '';
+          options.forEach(opt => {
+            const button = createElement('button', {
+              class: 'modal-option',
+              onclick: opt.onClick,
+              'aria-label': opt.label
+            }, opt.label);
+            modalOptions.appendChild(button);
+          });
+          modal.style.display = 'flex';
+        };
+        
+        const close = () => {
+          modal.style.display = 'none';
+        };
+        
+        modalClose.addEventListener('click', close);
+        window.addEventListener('click', (e) => {
+          if (e.target === modal) {
+            close();
+          }
+        });
+        window.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && modal.style.display === 'flex') {
+            close();
+          }
+        });
+        
+        return { show, close };
+      })();
+      
+      // Preprocessing Modal
+      const PreprocessingModal = (() => {
+        const preprocessingButton = document.getElementById('preprocessing-button');
+        const preprocessingModal = document.getElementById('preprocessing-modal');
+        const preprocessingClose = document.getElementById('preprocessing-modal-close');
+        const preprocessingOptions = document.getElementById('preprocessing-options');
+
+        const show = () => {
+          preprocessingModal.style.display = 'flex';
+        };
+
+        const close = () => {
+          preprocessingModal.style.display = 'none';
+        };
+
+        // Initialize Preprocessing Controls
+        const init = () => {
+          // Grayscale
+          const chkGrayscale = document.getElementById('chkGrayscale');
+          chkGrayscale.addEventListener('change', (e) => {
+            preprocessSettings.grayscale.enabled = e.target.checked;
+          });
+
+          // Threshold
+          const chkThreshold = document.getElementById('chkThreshold');
+          const sliderThreshold = document.getElementById('sliderThreshold');
+          const valThreshold = document.getElementById('valThreshold');
+          chkThreshold.addEventListener('change', (e) => {
+            preprocessSettings.threshold.enabled = e.target.checked;
+          });
+          sliderThreshold.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value, 10);
+            valThreshold.textContent = val;
+            preprocessSettings.threshold.value = val;
+          });
+
+          // Edge Detection
+          const chkEdges = document.getElementById('chkEdges');
+          const sliderEdges = document.getElementById('sliderEdges');
+          const valEdges = document.getElementById('valEdges');
+          chkEdges.addEventListener('change', (e) => {
+            preprocessSettings.edges.enabled = e.target.checked;
+          });
+          sliderEdges.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value, 10);
+            valEdges.textContent = val;
+            preprocessSettings.edges.value = val;
+          });
+
+          // Highlights
+          const chkHighlights = document.getElementById('chkHighlights');
+          const sliderHighlights = document.getElementById('sliderHighlights');
+          const valHighlights = document.getElementById('valHighlights');
+          chkHighlights.addEventListener('change', (e) => {
+            preprocessSettings.highlights.enabled = e.target.checked;
+          });
+          sliderHighlights.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value, 10);
+            valHighlights.textContent = val;
+            preprocessSettings.highlights.value = val;
+          });
+
+          // Brightness
+          const chkBrightness = document.getElementById('chkBrightness');
+          const sliderBrightness = document.getElementById('sliderBrightness');
+          const valBrightness = document.getElementById('valBrightness');
+          chkBrightness.addEventListener('change', (e) => {
+            preprocessSettings.brightness.enabled = e.target.checked;
+          });
+          sliderBrightness.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value, 10);
+            valBrightness.textContent = val;
+            preprocessSettings.brightness.value = val;
+          });
+
+          // Workers
+          const workerSelect = document.getElementById('workerSelect');
+          workerSelect.addEventListener('change', (e) => {
+            const val = parseInt(e.target.value, 10);
+            preprocessSettings.workers = val;
+            CameraStream.setupWorkers(); // Re-setup workers based on new selection
+            console.log(`Number of Web Workers set to: ${val}`);
+          });
+
+          // Show Preprocessing Modal
+          preprocessingButton.addEventListener('click', show);
+
+          // Close Preprocessing Modal
+          preprocessingClose.addEventListener('click', close);
+
+          // Close when clicking outside
+          window.addEventListener('click', (e) => {
+            if (e.target === preprocessingModal) {
+              close();
+            }
+          });
+        };
+
+        return { init };
+      })();
+      
+      // Browser Rendering FPS Counter
+      const FPSCounter = (() => {
+        const fpsVal = document.getElementById('fps-value');
+        const fpsIndicator = document.getElementById('fps-indicator');
+        let frameCount = 0;
+        let lastTime = performance.now();
+        const targetFPS = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fps-target')) || 120;
+        const acceptableFPS = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fps-acceptable')) || 60;
+        
+        const update = () => {
+          frameCount++;
+          const now = performance.now();
+          if (now - lastTime >= 1000) {
+            const currentFPS = frameCount;
+            fpsVal.textContent = `FPS: ${currentFPS}`;
+            if (currentFPS >= targetFPS) {
+              fpsIndicator.style.backgroundColor = 'green';
+            } else if (currentFPS >= acceptableFPS) {
+              fpsIndicator.style.backgroundColor = 'yellow';
+            } else {
+              fpsIndicator.style.backgroundColor = 'red';
+            }
+            frameCount = 0;
+            lastTime = now;
+          }
+          requestAnimationFrame(update);
+        };
+        
+        const start = () => requestAnimationFrame(update);
+        return { start };
+      })();
+      
+      // Orientation Module
+      const Orientation = (() => {
+        const orientationValue = document.getElementById('orientation-value');
+        const orientationCircle = document.getElementById('orientation-circle');
+        
+        const getDeviceOrientation = () => {
+          if (window.screen.orientation && window.screen.orientation.type) {
+            return window.screen.orientation.type.startsWith('portrait') ? 'portrait' : 'landscape';
+          }
+          return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+        };
+        
+        const updateOrientationIndicator = () => {
+          const orientation = getDeviceOrientation();
+          orientationValue.textContent = `Orientation: ${orientation}`;
+          if (orientation === 'portrait') {
+            orientationCircle.style.backgroundColor = 'blue';
+          } else if (orientation === 'landscape') {
+            orientationCircle.style.backgroundColor = 'purple';
+          } else {
+            orientationCircle.style.backgroundColor = 'gray';
+          }
+          console.log(`Orientation: ${orientation}`);
+        };
+        
+        const debounce = (func, delay = 300) => {
+          let timeout;
+          return function(...args) {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(this, args), delay);
+          };
+        };
+        
+        const init = () => {
+          updateOrientationIndicator();
+          window.addEventListener('resize', debounce(updateOrientationIndicator));
+          window.addEventListener('orientationchange', debounce(updateOrientationIndicator));
+        };
+        
+        return { init };
+      })();
+      
+      // Camera Stream Module with OpenCV Processing
+      const CameraStream = (() => {
+        const videoElement = document.getElementById('camera-stream');
+        const overlayCanvas = document.getElementById('overlayCanvas');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const cameraFpsValue = document.getElementById('camera-fps-value');
+        const cameraFpsCircle = document.getElementById('camera-fps-circle');
+        const frameCanvas = document.getElementById('frameCanvas');
+        const overlayCtx = overlayCanvas.getContext('2d');
+        const frameCtx = frameCanvas.getContext('2d');
+        
+        let currentStream = null;
+        let currentCameraIndex = 0;
+        let currentResolution = {
+          width: 1280,
+          height: 720,
+          label: 'Portrait 1280x720',
+          orientation: 'landscape'
+        };
+        let userChosenFps = 60;
+        let cameras = [];
+        let isChangingStream = false;
+        let player = null;
+        let debounceTimeout;
+        let processor = null;
+        let reader = null;
+        let processing = false;
+        let frameRate = 0;
+        let lastCameraFrameTime = performance.now();
+        
+        // Web Workers
+        let workers = [];
+        let workerCount = 1;
+        let workerQueue = [];
+        let activeWorkers = 0;
+
+        // Example resolution list (swapped labels as requested)
+        const resolutions = [
+          { label: 'Landscape 480x640', width: 480, height: 640, orientation: 'portrait' },
+          { label: 'Portrait 640x480', width: 640, height: 480, orientation: 'landscape' },
+          { label: 'Landscape 720x1280', width: 720, height: 1280, orientation: 'portrait' },
+          { label: 'Portrait 1280x720', width: 1280, height: 720, orientation: 'landscape' },
+          { label: 'Landscape 1080x1920', width: 1080, height: 1920, orientation: 'portrait' },
+          { label: 'Portrait 1920x1080', width: 1920, height: 1080, orientation: 'landscape' },
+          { label: 'Landscape 1440x2560', width: 1440, height: 2560, orientation: 'portrait' },
+          { label: 'Portrait 2560x1440', width: 2560, height: 1440, orientation: 'landscape' },
+          { label: 'Landscape 2160x3840', width: 2160, height: 3840, orientation: 'portrait' },
+          { label: 'Portrait 3840x2160', width: 3840, height: 2160, orientation: 'landscape' }
+        ];
+        
+        // Orientation indicator only
+        const getDeviceOrientation = () => {
+          if (window.screen.orientation && window.screen.orientation.type) {
+            return window.screen.orientation.type.startsWith('portrait') ? 'portrait' : 'landscape';
+          }
+          return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+        };
+        
+        const updateCameraFpsIndicator = (fps) => {
+          cameraFpsValue.textContent = `Camera FPS: ${fps}`;
+          if (fps >= userChosenFps * 0.9) {
+            cameraFpsCircle.style.backgroundColor = 'green';
+          } else if (fps >= userChosenFps * 0.6) {
+            cameraFpsCircle.style.backgroundColor = 'yellow';
+          } else {
+            cameraFpsCircle.style.backgroundColor = 'red';
+          }
+          console.log(`Camera FPS updated: ${fps}`);
+        };
+        
+        const initializeVideoJS = () => {
+          if (!player) {
+            player = videojs('camera-stream', {
+              autoplay: true,
+              muted: true,
+              controls: false,
+              fluid: true
+            });
+            console.log('Video.js initialized');
+          }
+        };
+        
+        const resizeVideo = () => {
+          console.log('Window or orientation changed → resizing if needed.');
+          alignOverlayCanvas();
+        };
+        
+        const alignOverlayCanvas = () => {
+          const videoElement = document.getElementById('camera-stream');
+          const overlayCanvas = document.getElementById('overlayCanvas');
+
+          overlayCanvas.width = videoElement.videoWidth;
+          overlayCanvas.height = videoElement.videoHeight;
+          overlayCanvas.style.width = `${videoElement.offsetWidth}px`;
+          overlayCanvas.style.height = `${videoElement.offsetHeight}px`;
+        };
+        
+        const getCameras = async () => {
+          try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            cameras = devices.filter(d => d.kind === 'videoinput');
+            console.log(`Found ${cameras.length} camera(s).`);
+            if (cameras.length === 0) {
+              alert('No cameras found on this device.');
+            }
+          } catch (err) {
+            console.error('Error enumerating devices:', err);
+            alert('Unable to access camera devices.');
+          }
+        };
+        
+        const displayStreamSettings = (settings) => {
+          const msg = `Current Resolution: ${settings.width}x${settings.height}, FPS: ${settings.frameRate}`;
+          Modal.show(msg, [{ label: 'OK', onClick: Modal.close }]);
+          console.log(msg);
+        };
+        
+        const initializeCameraStream = async () => {
+          try {
+            const constraints = {
+              video: {
+                deviceId: cameras[currentCameraIndex]?.deviceId
+                  ? { exact: cameras[currentCameraIndex].deviceId }
+                  : undefined,
+                facingMode: 'environment',
+                width: { ideal: currentResolution.width },
+                height: { ideal: currentResolution.height },
+                frameRate: { ideal: userChosenFps, max: userChosenFps }
+              }
+            };
+            
+            console.log('Requesting media with:', constraints);
+            
+            loadingIndicator.style.display = 'block';
+            
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            
+            currentStream = stream;
+            videoElement.srcObject = stream;
+            await videoElement.play();
+            
+            console.log('Camera stream initialized.');
+            cameraReady = true;
+            const trackSettings = stream.getVideoTracks()[0].getSettings();
+            updateCameraFpsIndicator(trackSettings.frameRate || userChosenFps);
+            displayStreamSettings(trackSettings);
+
+            initializeVideoJS();
+            alignOverlayCanvas();
+
+            // If OpenCV is already ready, start frame processing
+            if (opencvReady) {
+              startFrameProcessing();
+            }
+
+            // Handle window resize to align overlay canvas
+            window.addEventListener('resize', alignOverlayCanvas);
+          } catch (error) {
+            console.error('Error initializing camera stream:', error);
+            if (error.name === 'NotAllowedError') {
+              alert('Camera access was denied. Please enable it in your browser settings.');
+            } else if (error.name === 'NotFoundError') {
+              alert('No camera device found.');
+            } else {
+              alert(`Error initializing camera: ${error.message}`);
+            }
+          } finally {
+            loadingIndicator.style.display = 'none';
+          }
+        };
+        
+        const switchCamera = async () => {
+          if (cameras.length < 2) {
+            Modal.show('No alternate cameras found.');
+            return;
+          }
+          
+          const camOptions = cameras.map((cam, i) => ({
+            label: cam.label || `Camera ${i + 1}`,
+            onClick: () => {
+              currentCameraIndex = i;
+              Modal.close();
+              initializeCameraStream();
+              console.log(`Switched to camera index: ${i}`);
+            }
+          }));
+          
+          Modal.show('Select a camera:', camOptions);
+        };
+        
+        const switchResolution = () => {
+          const opts = resolutions.map(r => ({
+            label: r.label,
+            onClick: async () => {
+              currentResolution = { 
+                width: r.width,
+                height: r.height,
+                orientation: r.orientation,
+                label: r.label
+              };
+              Modal.close();
+              await initializeCameraStream();
+              console.log(`Switched resolution: ${r.label}`);
+            }
+          }));
+          
+          Modal.show('Select a resolution:', opts);
+        };
+        
+        const switchFps = () => {
+          const fpsOpts = [
+            {
+              label: '30 FPS',
+              onClick: async () => {
+                userChosenFps = 30;
+                Modal.close();
+                await initializeCameraStream();
+                console.log('Switched to 30 FPS');
+              }
+            },
+            {
+              label: '60 FPS',
+              onClick: async () => {
+                userChosenFps = 60;
+                Modal.close();
+                await initializeCameraStream();
+                console.log('Switched to 60 FPS');
+              }
+            }
+          ];
+          
+          Modal.show('Select FPS:', fpsOpts);
+        };
+        
+        // Web Workers Setup
+        const setupWorkers = () => {
+          // Terminate existing workers
+          workers.forEach(worker => worker.terminate());
+          workers = [];
+
+          // Create new workers based on user selection
+          for (let i = 0; i < preprocessSettings.workers; i++) {
+            const worker = new Worker(URL.createObjectURL(new Blob([`
+              importScripts('./opencv.js');
+
+              let opencvReady = false;
+              cv['onRuntimeInitialized'] = () => {
+                opencvReady = true;
+              };
+
+              self.onmessage = function(e) {
+                if (!opencvReady) return;
+                const { imageData, settings } = e.data;
+                const processedData = processFrame(imageData, settings);
+                self.postMessage({ processedData });
+              };
+
+              function processFrame(imageData, settings) {
+                const srcMat = cv.matFromImageData(imageData);
+                // Grayscale
+                if (settings.grayscale.enabled) {
+                  cv.cvtColor(srcMat, srcMat, cv.COLOR_RGBA2GRAY, 0);
+                  cv.cvtColor(srcMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
+                }
+                // Threshold
+                if (settings.threshold.enabled) {
+                  let tVal = (settings.threshold.value / 100) * 255;
+                  cv.threshold(srcMat, srcMat, tVal, 255, cv.THRESH_BINARY);
+                }
+                // Edge Detection
+                if (settings.edges.enabled) {
+                  let eVal = settings.edges.value;
+                  let t1 = eVal * 2.5; 
+                  let t2 = t1 * 1.5;
+                  let edgeMat = new cv.Mat();
+                  cv.Canny(srcMat, edgeMat, t1, t2);
+                  cv.cvtColor(edgeMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
+                  edgeMat.delete();
+                }
+                // Highlights
+                if (settings.highlights.enabled) {
+                  let kernelSize = Math.max(1, Math.floor(settings.highlights.value / 10));
+                  let kernel = cv.Mat.ones(kernelSize, kernelSize, cv.CV_8U);
+                  let highlightMat = new cv.Mat();
+                  cv.dilate(srcMat, highlightMat, kernel);
+                  highlightMat.copyTo(srcMat);
+                  kernel.delete();
+                  highlightMat.delete();
+                }
+                // Brightness
+                if (settings.brightness.enabled) {
+                  let bVal = parseInt(settings.brightness.value, 10);
+                  let alpha = (bVal - 50);
+                  cv.convertScaleAbs(srcMat, srcMat, 1, alpha);
+                }
+
+                const processed = new ImageData(new Uint8ClampedArray(srcMat.data), srcMat.cols, srcMat.rows);
+                srcMat.delete();
+                return processed;
+              }
+            `], { type: 'application/javascript' })));
+            
+            worker.onmessage = function(e) {
+              const { processedData } = e.data;
+              overlayCtx.putImageData(processedData, 0, 0);
+              activeWorkers--;
+              if (workerQueue.length > 0) {
+                const nextFrame = workerQueue.shift();
+                worker.postMessage(nextFrame);
+                activeWorkers++;
+              }
+            };
+            workers.push(worker);
+          }
+        };
+
+        const processFrameWithOpenCV = (videoFrame) => {
+          // Draw the VideoFrame onto frameCanvas
+          frameCanvas.width = videoFrame.displayWidth;
+          frameCanvas.height = videoFrame.displayHeight;
+          
+          try {
+            frameCtx.drawImage(videoFrame, 0, 0, frameCanvas.width, frameCanvas.height);
+          } catch (err) {
+            console.error('drawImage(VideoFrame) not supported:', err);
+            return;
+          }
+
+          // Get image data
+          const imageData = frameCtx.getImageData(0, 0, frameCanvas.width, frameCanvas.height);
+
+          // Enqueue frame for processing
+          if (activeWorkers < workers.length) {
+            workers[activeWorkers].postMessage({ imageData, settings: preprocessSettings });
+            activeWorkers++;
+          } else {
+            workerQueue.push({ imageData, settings: preprocessSettings });
+          }
+
+          // Update camera FPS
+          const now = performance.now();
+          frameRate = 1000 / (now - lastCameraFrameTime);
+          lastCameraFrameTime = now;
+          updateCameraFpsIndicator(Math.round(frameRate));
+        };
+
+        const processFrameWithCanvasFallback = () => {
+          overlayCtx.drawImage(videoElement, 0, 0, overlayCanvas.width, overlayCanvas.height);
+          // Update camera FPS
+          const now = performance.now();
+          frameRate = 1000 / (now - lastCameraFrameTime);
+          lastCameraFrameTime = now;
+          updateCameraFpsIndicator(Math.round(frameRate));
+          requestAnimationFrame(processFrameWithCanvasFallback);
+        };
+
+        const setupTrackProcessor = (track) => {
+          if (typeof MediaStreamTrackProcessor === 'undefined') {
+            console.warn('MediaStreamTrackProcessor is not supported. Falling back to canvas processing.');
+            processFrameWithCanvasFallback();
+            return;
+          }
+
+          try {
+            processor = new MediaStreamTrackProcessor({ track });
+            reader = processor.readable.getReader();
+            console.log('MediaStreamTrackProcessor initialized');
+            processFrames();
+          } catch (err) {
+            console.error('Error setting up MediaStreamTrackProcessor:', err);
+            processFrameWithCanvasFallback();
+          }
+        };
+
+        const processFrames = async () => {
+          while (true) {
+            try {
+              const result = await reader.read();
+              if (result.done) {
+                console.log('No more camera frames (stream ended).');
+                break;
+              }
+
+              const frame = result.value; // VideoFrame object
+
+              if (opencvReady) {
+                processFrameWithOpenCV(frame);
+              } else {
+                console.log('OpenCV not ready yet.');
+              }
+
+              // Release the frame
+              frame.close();
+            } catch (err) {
+              console.error('Error reading frames:', err);
+              break;
+            }
+          }
+        };
+
+        const startFrameProcessing = () => {
+          if (!currentStream) {
+            console.warn('No camera stream available.');
+            return;
+          }
+
+          const track = currentStream.getVideoTracks()[0];
+          setupTrackProcessor(track);
+        };
+
+        const debounce = (func, delay = 300) => {
+          let timeout;
+          return function(...args) {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(this, args), delay);
+          };
+        };
+
+        const setupWorkers = () => {
+          // Terminate existing workers
+          workers.forEach(worker => worker.terminate());
+          workers = [];
+
+          // Create new workers based on user selection
+          for (let i = 0; i < preprocessSettings.workers; i++) {
+            const worker = new Worker(URL.createObjectURL(new Blob([`
+              importScripts('./opencv.js');
+
+              let opencvReady = false;
+              cv['onRuntimeInitialized'] = () => {
+                opencvReady = true;
+              };
+
+              self.onmessage = function(e) {
+                if (!opencvReady) return;
+                const { imageData, settings } = e.data;
+                const processedData = processFrame(imageData, settings);
+                self.postMessage({ processedData });
+              };
+
+              function processFrame(imageData, settings) {
+                const srcMat = cv.matFromImageData(imageData);
+                // Grayscale
+                if (settings.grayscale.enabled) {
+                  cv.cvtColor(srcMat, srcMat, cv.COLOR_RGBA2GRAY, 0);
+                  cv.cvtColor(srcMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
+                }
+                // Threshold
+                if (settings.threshold.enabled) {
+                  let tVal = (settings.threshold.value / 100) * 255;
+                  cv.threshold(srcMat, srcMat, tVal, 255, cv.THRESH_BINARY);
+                }
+                // Edge Detection
+                if (settings.edges.enabled) {
+                  let eVal = settings.edges.value;
+                  let t1 = eVal * 2.5; 
+                  let t2 = t1 * 1.5;
+                  let edgeMat = new cv.Mat();
+                  cv.Canny(srcMat, edgeMat, t1, t2);
+                  cv.cvtColor(edgeMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
+                  edgeMat.delete();
+                }
+                // Highlights
+                if (settings.highlights.enabled) {
+                  let kernelSize = Math.max(1, Math.floor(settings.highlights.value / 10));
+                  let kernel = cv.Mat.ones(kernelSize, kernelSize, cv.CV_8U);
+                  let highlightMat = new cv.Mat();
+                  cv.dilate(srcMat, highlightMat, kernel);
+                  highlightMat.copyTo(srcMat);
+                  kernel.delete();
+                  highlightMat.delete();
+                }
+                // Brightness
+                if (settings.brightness.enabled) {
+                  let bVal = parseInt(settings.brightness.value, 10);
+                  let alpha = (bVal - 50);
+                  cv.convertScaleAbs(srcMat, srcMat, 1, alpha);
+                }
+
+                const processed = new ImageData(new Uint8ClampedArray(srcMat.data), srcMat.cols, srcMat.rows);
+                srcMat.delete();
+                return processed;
+              }
+            `], { type: 'application/javascript' })));
+            
+            worker.onmessage = function(e) {
+              const { processedData } = e.data;
+              overlayCtx.putImageData(processedData, 0, 0);
+              activeWorkers--;
+              if (workerQueue.length > 0) {
+                const nextFrame = workerQueue.shift();
+                worker.postMessage(nextFrame);
+                activeWorkers++;
+              }
+            };
+            workers.push(worker);
+          }
+        };
+
+        const processFrameWithOpenCV = (videoFrame) => {
+          // Draw the VideoFrame onto frameCanvas
+          frameCanvas.width = videoFrame.displayWidth;
+          frameCanvas.height = videoFrame.displayHeight;
+          
+          try {
+            frameCtx.drawImage(videoFrame, 0, 0, frameCanvas.width, frameCanvas.height);
+          } catch (err) {
+            console.error('drawImage(VideoFrame) not supported:', err);
+            return;
+          }
+
+          // Get image data
+          const imageData = frameCtx.getImageData(0, 0, frameCanvas.width, frameCanvas.height);
+
+          // Enqueue frame for processing
+          if (activeWorkers < workers.length) {
+            workers[activeWorkers].postMessage({ imageData, settings: preprocessSettings });
+            activeWorkers++;
+          } else {
+            workerQueue.push({ imageData, settings: preprocessSettings });
+          }
+
+          // Update camera FPS
+          const now = performance.now();
+          frameRate = 1000 / (now - lastCameraFrameTime);
+          lastCameraFrameTime = now;
+          updateCameraFpsIndicator(Math.round(frameRate));
+        };
+
+        const processFrameWithCanvasFallback = () => {
+          overlayCtx.drawImage(videoElement, 0, 0, overlayCanvas.width, overlayCanvas.height);
+          // Update camera FPS
+          const now = performance.now();
+          frameRate = 1000 / (now - lastCameraFrameTime);
+          lastCameraFrameTime = now;
+          updateCameraFpsIndicator(Math.round(frameRate));
+          requestAnimationFrame(processFrameWithCanvasFallback);
+        };
+
+        const setupTrackProcessor = (track) => {
+          if (typeof MediaStreamTrackProcessor === 'undefined') {
+            console.warn('MediaStreamTrackProcessor is not supported. Falling back to canvas processing.');
+            processFrameWithCanvasFallback();
+            return;
+          }
+
+          try {
+            processor = new MediaStreamTrackProcessor({ track });
+            reader = processor.readable.getReader();
+            console.log('MediaStreamTrackProcessor initialized');
+            processFrames();
+          } catch (err) {
+            console.error('Error setting up MediaStreamTrackProcessor:', err);
+            processFrameWithCanvasFallback();
+          }
+        };
+
+        const processFrames = async () => {
+          while (true) {
+            try {
+              const result = await reader.read();
+              if (result.done) {
+                console.log('No more camera frames (stream ended).');
+                break;
+              }
+
+              const frame = result.value; // VideoFrame object
+
+              if (opencvReady) {
+                processFrameWithOpenCV(frame);
+              } else {
+                console.log('OpenCV not ready yet.');
+              }
+
+              // Release the frame
+              frame.close();
+            } catch (err) {
+              console.error('Error reading frames:', err);
+              break;
+            }
+          }
+        };
+
+        const startFrameProcessing = () => {
+          if (!currentStream) {
+            console.warn('No camera stream available.');
+            return;
+          }
+
+          const track = currentStream.getVideoTracks()[0];
+          setupTrackProcessor(track);
+        };
+
+        const debounce = (func, delay = 300) => {
+          let timeout;
+          return function(...args) {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(this, args), delay);
+          };
+        };
+
+        const setupWorkers = () => {
+          // Terminate existing workers
+          workers.forEach(worker => worker.terminate());
+          workers = [];
+
+          // Create new workers based on user selection
+          for (let i = 0; i < preprocessSettings.workers; i++) {
+            const worker = new Worker(URL.createObjectURL(new Blob([`
+              importScripts('./opencv.js');
+
+              let opencvReady = false;
+              cv['onRuntimeInitialized'] = () => {
+                opencvReady = true;
+              };
+
+              self.onmessage = function(e) {
+                if (!opencvReady) return;
+                const { imageData, settings } = e.data;
+                const processedData = processFrame(imageData, settings);
+                self.postMessage({ processedData });
+              };
+
+              function processFrame(imageData, settings) {
+                const srcMat = cv.matFromImageData(imageData);
+                // Grayscale
+                if (settings.grayscale.enabled) {
+                  cv.cvtColor(srcMat, srcMat, cv.COLOR_RGBA2GRAY, 0);
+                  cv.cvtColor(srcMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
+                }
+                // Threshold
+                if (settings.threshold.enabled) {
+                  let tVal = (settings.threshold.value / 100) * 255;
+                  cv.threshold(srcMat, srcMat, tVal, 255, cv.THRESH_BINARY);
+                }
+                // Edge Detection
+                if (settings.edges.enabled) {
+                  let eVal = settings.edges.value;
+                  let t1 = eVal * 2.5; 
+                  let t2 = t1 * 1.5;
+                  let edgeMat = new cv.Mat();
+                  cv.Canny(srcMat, edgeMat, t1, t2);
+                  cv.cvtColor(edgeMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
+                  edgeMat.delete();
+                }
+                // Highlights
+                if (settings.highlights.enabled) {
+                  let kernelSize = Math.max(1, Math.floor(settings.highlights.value / 10));
+                  let kernel = cv.Mat.ones(kernelSize, kernelSize, cv.CV_8U);
+                  let highlightMat = new cv.Mat();
+                  cv.dilate(srcMat, highlightMat, kernel);
+                  highlightMat.copyTo(srcMat);
+                  kernel.delete();
+                  highlightMat.delete();
+                }
+                // Brightness
+                if (settings.brightness.enabled) {
+                  let bVal = parseInt(settings.brightness.value, 10);
+                  let alpha = (bVal - 50);
+                  cv.convertScaleAbs(srcMat, srcMat, 1, alpha);
+                }
+
+                const processed = new ImageData(new Uint8ClampedArray(srcMat.data), srcMat.cols, srcMat.rows);
+                srcMat.delete();
+                return processed;
+              }
+            `], { type: 'application/javascript' })));
+            
+            worker.onmessage = function(e) {
+              const { processedData } = e.data;
+              overlayCtx.putImageData(processedData, 0, 0);
+              activeWorkers--;
+              if (workerQueue.length > 0) {
+                const nextFrame = workerQueue.shift();
+                worker.postMessage(nextFrame);
+                activeWorkers++;
+              }
+            };
+            workers.push(worker);
+          }
+        };
+
+        const init = async () => {
+          await getCameras();
+          await initializeCameraStream();
+          setupWorkers();
+        };
+        
+        return { init, switchCamera, switchResolution, switchFps, setupWorkers, startFrameProcessing };
+      })();
+      
+      // Permissions Module
+      const Permissions = (() => {
+        const checkPermissions = async () => {
+          try {
+            const status = await navigator.permissions.query({ name: 'camera' });
+            handlePermissionState(status.state);
+            
+            status.onchange = () => {
+              handlePermissionState(status.state);
+            };
+          } catch (err) {
+            console.error('Error checking camera permissions:', err);
+            Modal.show('An error occurred while accessing camera permissions.');
+          }
+        };
+        
+        const handlePermissionState = (state) => {
+          switch(state) {
+            case 'denied':
+              Modal.show('Camera access denied. Enable it in your browser settings.');
+              break;
+            case 'prompt':
+              requestCameraAccess();
+              break;
+            case 'granted':
+              // Proceed without refreshing
+              break;
+            default:
+              break;
+          }
+        };
+        
+        const requestCameraAccess = async () => {
+          try {
+            await navigator.mediaDevices.getUserMedia({ video: true });
+            Modal.show(
+              'Camera access granted. The page will refresh to start the camera stream.',
+              [
+                {
+                  label: 'Continue',
+                  onClick: () => {
+                    Modal.close();
+                    location.reload();
+                  }
+                }
+              ]
+            );
+          } catch (error) {
+            console.error('Error requesting camera access:', error);
+            Modal.show('Camera access is required to use this application.');
+          }
+        };
+        
+        const init = () => {
+          checkPermissions();
+        };
+        
+        return { init };
+      })();
+      
+      // Initialize Everything
+      document.addEventListener('DOMContentLoaded', () => {
+        FPSCounter.start();         // Start the rendering FPS loop
+        Orientation.init();         // Initialize orientation indicators
+        PreprocessingModal.init();  // Initialize preprocessing controls
+        Permissions.init();         // Check camera permissions
+        // Hook up controls
+        document.getElementById('change-camera').addEventListener('click', CameraStream.switchCamera);
+        document.getElementById('change-resolution').addEventListener('click', debounce(CameraStream.switchResolution));
+        document.getElementById('change-fps').addEventListener('click', debounce(CameraStream.switchFps));
+      });
+      
+      // Debounce function
+      function debounce(func, delay = 300) {
+        let timeout;
+        return function(...args) {
+          clearTimeout(timeout);
+          timeout = setTimeout(() => func.apply(this, args), delay);
+        };
+      }
+      
+    })();
+  </script>
 </head>
 <body>
   
@@ -387,9 +1467,7 @@
     <div class="modal-content">
       <span class="close-button" id="modal-close" aria-label="Close Modal">&times;</span>
       <div class="modal-message" id="modal-message">Modal Message</div>
-      <div class="modal-options" id="modal-options">
-        <!-- Dynamic Options Will Be Injected Here -->
-      </div>
+      <div class="modal-options" id="modal-options"></div>
     </div>
   </div>
   
@@ -397,48 +1475,42 @@
   <div id="preprocessing-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="preprocessing-modal-title">
     <div class="modal-content">
       <span class="close-button" id="preprocessing-modal-close" aria-label="Close Preprocessing Modal">&times;</span>
-      <h2 id="preprocessing-modal-title">Preprocessing Controls</h2>
-      
-      <div class="modal-options" id="preprocessing-options">
+      <div class="modal-message" id="preprocessing-modal-message">Preprocessing Controls</div>
+      <div class="preprocessing-options" id="preprocessing-options">
         <!-- Grayscale -->
         <div class="preprocessing-option">
           <label for="chkGrayscale">Grayscale</label>
-          <input type="checkbox" id="chkGrayscale" />
+          <input type="checkbox" id="chkGrayscale">
         </div>
-        
         <!-- Threshold -->
         <div class="preprocessing-option">
           <label for="chkThreshold">Threshold</label>
-          <input type="checkbox" id="chkThreshold" />
-          <input type="range" id="sliderThreshold" min="0" max="100" value="50" />
+          <input type="checkbox" id="chkThreshold">
+          <input type="range" id="sliderThreshold" min="0" max="100" value="50">
           <span id="valThreshold">50</span>
         </div>
-        
-        <!-- Edge Detection (Canny) -->
+        <!-- Edge Detection -->
         <div class="preprocessing-option">
           <label for="chkEdges">Edge Detection</label>
-          <input type="checkbox" id="chkEdges" />
-          <input type="range" id="sliderEdges" min="0" max="100" value="50" />
+          <input type="checkbox" id="chkEdges">
+          <input type="range" id="sliderEdges" min="0" max="100" value="50">
           <span id="valEdges">50</span>
         </div>
-        
         <!-- Highlights -->
         <div class="preprocessing-option">
           <label for="chkHighlights">Highlights</label>
-          <input type="checkbox" id="chkHighlights" />
-          <input type="range" id="sliderHighlights" min="0" max="100" value="50" />
+          <input type="checkbox" id="chkHighlights">
+          <input type="range" id="sliderHighlights" min="0" max="100" value="50">
           <span id="valHighlights">50</span>
         </div>
-        
         <!-- Brightness -->
         <div class="preprocessing-option">
           <label for="chkBrightness">Brightness</label>
-          <input type="checkbox" id="chkBrightness" />
-          <input type="range" id="sliderBrightness" min="0" max="100" value="50" />
+          <input type="checkbox" id="chkBrightness">
+          <input type="range" id="sliderBrightness" min="0" max="100" value="50">
           <span id="valBrightness">50</span>
         </div>
-
-        <!-- Web Workers Selection -->
+        <!-- Workers -->
         <div class="preprocessing-option">
           <label for="workerSelect">Web Workers</label>
           <select id="workerSelect">
@@ -450,828 +1522,6 @@
       </div>
     </div>
   </div>
-  
-  <!-- OpenCV.js from the official docs/opencv CDN (example version 4.6.0) -->
-  <script src="https://docs.opencv.org/4.6.0/opencv.js" defer></script>
-  
-  <!-- Video.js Library (no integrity checks) -->
-  <script
-    src="https://vjs.zencdn.net/8.0.4/video.min.js"
-    defer
-  ></script>
-  
-  <!-- JavaScript -->
-  <script>
-    (function() {
-      // Wait for the DOM to be fully loaded
-      document.addEventListener('DOMContentLoaded', () => {
-        // Global Flags
-        let opencvReady = false;
-        let preprocessSettings = {
-          grayscale: { enabled: false, value: 100 },
-          threshold: { enabled: false, value: 50 },
-          edges: { enabled: false, value: 50 },
-          highlights: { enabled: false, value: 50 },
-          brightness: { enabled: false, value: 50 },
-          workers: 1
-        };
-        
-        // OpenCV Indicator Element
-        const opencvIndicator = document.getElementById('opencv-indicator');
-
-        // Update OpenCV Indicator
-        const updateOpenCVIndicator = (status) => {
-          switch(status) {
-            case 'loading':
-              opencvIndicator.textContent = 'OpenCV: Loading...';
-              opencvIndicator.style.color = 'yellow';
-              break;
-            case 'ready':
-              opencvIndicator.textContent = 'OpenCV: Ready';
-              opencvIndicator.style.color = 'green';
-              break;
-            case 'error':
-              opencvIndicator.textContent = 'OpenCV: Failed to Load';
-              opencvIndicator.style.color = 'red';
-              break;
-            default:
-              opencvIndicator.textContent = 'OpenCV: Unknown Status';
-              opencvIndicator.style.color = 'red';
-          }
-        };
-
-        // Initialize OpenCV
-        updateOpenCVIndicator('loading');
-        if (typeof cv !== 'undefined') {
-          cv['onRuntimeInitialized'] = () => {
-            console.log('OpenCV is fully initialized');
-            opencvReady = true;
-            updateOpenCVIndicator('ready');
-            CameraStream.init();
-          };
-        } else {
-          updateOpenCVIndicator('error');
-          Modal.show('Failed to load OpenCV.js. Please check your internet connection and refresh the page.');
-        }
-
-        // Helper to create DOM elements
-        const createElement = (tag, attrs = {}, ...children) => {
-          const el = document.createElement(tag);
-          for (const k in attrs) {
-            if (k.startsWith('data-') || k.startsWith('aria-')) {
-              el.setAttribute(k, attrs[k]);
-            } else if (k === 'class') {
-              el.className = attrs[k];
-            } else if (k === 'style') {
-              el.style.cssText = attrs[k];
-            } else {
-              el[k] = attrs[k];
-            }
-          }
-          children.forEach(child => {
-            if (typeof child === 'string') {
-              el.appendChild(document.createTextNode(child));
-            } else if (child instanceof Node) {
-              el.appendChild(child);
-            }
-          });
-          return el;
-        };
-        
-        // Simple Modal
-        const Modal = (() => {
-          const modal = document.getElementById('modal');
-          const modalClose = document.getElementById('modal-close');
-          const modalMessage = document.getElementById('modal-message');
-          const modalOptions = document.getElementById('modal-options');
-          
-          const show = (message, options = []) => {
-            modalMessage.textContent = message;
-            modalOptions.innerHTML = '';
-            options.forEach(opt => {
-              const button = createElement('button', {
-                class: 'modal-option',
-                onclick: opt.onClick,
-                'aria-label': opt.label
-              }, opt.label);
-              modalOptions.appendChild(button);
-            });
-            modal.style.display = 'flex';
-          };
-          
-          const close = () => {
-            modal.style.display = 'none';
-          };
-          
-          modalClose.addEventListener('click', close);
-          window.addEventListener('click', (e) => {
-            if (e.target === modal) {
-              close();
-            }
-          });
-          window.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && modal.style.display === 'flex') {
-              close();
-            }
-          });
-          
-          return { show, close };
-        })();
-        
-        // Preprocessing Modal
-        const PreprocessingModal = (() => {
-          const preprocessingButton = document.getElementById('preprocessing-button');
-          const preprocessingModal = document.getElementById('preprocessing-modal');
-          const preprocessingClose = document.getElementById('preprocessing-modal-close');
-          const preprocessingOptions = document.getElementById('preprocessing-options');
-
-          const show = () => {
-            preprocessingModal.style.display = 'flex';
-          };
-
-          const close = () => {
-            preprocessingModal.style.display = 'none';
-          };
-
-          // Initialize Preprocessing Controls
-          const init = () => {
-            // Grayscale
-            const chkGrayscale = document.getElementById('chkGrayscale');
-            chkGrayscale.addEventListener('change', (e) => {
-              preprocessSettings.grayscale.enabled = e.target.checked;
-            });
-
-            // Threshold
-            const chkThreshold = document.getElementById('chkThreshold');
-            const sliderThreshold = document.getElementById('sliderThreshold');
-            const valThreshold = document.getElementById('valThreshold');
-            chkThreshold.addEventListener('change', (e) => {
-              preprocessSettings.threshold.enabled = e.target.checked;
-            });
-            sliderThreshold.addEventListener('input', (e) => {
-              const val = parseInt(e.target.value, 10);
-              valThreshold.textContent = val;
-              preprocessSettings.threshold.value = val;
-            });
-
-            // Edge Detection
-            const chkEdges = document.getElementById('chkEdges');
-            const sliderEdges = document.getElementById('sliderEdges');
-            const valEdges = document.getElementById('valEdges');
-            chkEdges.addEventListener('change', (e) => {
-              preprocessSettings.edges.enabled = e.target.checked;
-            });
-            sliderEdges.addEventListener('input', (e) => {
-              const val = parseInt(e.target.value, 10);
-              valEdges.textContent = val;
-              preprocessSettings.edges.value = val;
-            });
-
-            // Highlights
-            const chkHighlights = document.getElementById('chkHighlights');
-            const sliderHighlights = document.getElementById('sliderHighlights');
-            const valHighlights = document.getElementById('valHighlights');
-            chkHighlights.addEventListener('change', (e) => {
-              preprocessSettings.highlights.enabled = e.target.checked;
-            });
-            sliderHighlights.addEventListener('input', (e) => {
-              const val = parseInt(e.target.value, 10);
-              valHighlights.textContent = val;
-              preprocessSettings.highlights.value = val;
-            });
-
-            // Brightness
-            const chkBrightness = document.getElementById('chkBrightness');
-            const sliderBrightness = document.getElementById('sliderBrightness');
-            const valBrightness = document.getElementById('valBrightness');
-            chkBrightness.addEventListener('change', (e) => {
-              preprocessSettings.brightness.enabled = e.target.checked;
-            });
-            sliderBrightness.addEventListener('input', (e) => {
-              const val = parseInt(e.target.value, 10);
-              valBrightness.textContent = val;
-              preprocessSettings.brightness.value = val;
-            });
-
-            // Web Workers
-            const workerSelect = document.getElementById('workerSelect');
-            workerSelect.addEventListener('change', (e) => {
-              const val = parseInt(e.target.value, 10);
-              preprocessSettings.workers = val;
-              CameraStream.setupWorkers();
-              console.log(`Number of Web Workers set to: ${val}`);
-            });
-
-            // Show Preprocessing Modal
-            preprocessingButton.addEventListener('click', show);
-
-            // Close Preprocessing Modal
-            preprocessingClose.addEventListener('click', close);
-
-            // Close when clicking outside
-            window.addEventListener('click', (e) => {
-              if (e.target === preprocessingModal) {
-                close();
-              }
-            });
-          };
-
-          return { init };
-        })();
-        
-        // Browser Rendering FPS Counter
-        const FPSCounter = (() => {
-          const fpsVal = document.getElementById('fps-value');
-          const fpsIndicator = document.getElementById('fps-indicator');
-          let frameCount = 0;
-          let lastTime = performance.now();
-          const targetFPS = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fps-target')) || 120;
-          const acceptableFPS = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fps-acceptable')) || 60;
-          
-          const update = () => {
-            frameCount++;
-            const now = performance.now();
-            if (now - lastTime >= 1000) {
-              const currentFPS = frameCount;
-              fpsVal.textContent = `FPS: ${currentFPS}`;
-              if (currentFPS >= targetFPS) {
-                fpsIndicator.style.backgroundColor = 'green';
-              } else if (currentFPS >= acceptableFPS) {
-                fpsIndicator.style.backgroundColor = 'yellow';
-              } else {
-                fpsIndicator.style.backgroundColor = 'red';
-              }
-              frameCount = 0;
-              lastTime = now;
-            }
-            requestAnimationFrame(update);
-          };
-          
-          const start = () => requestAnimationFrame(update);
-          return { start };
-        })();
-        
-        // Orientation Module
-        const Orientation = (() => {
-          const orientationValue = document.getElementById('orientation-value');
-          const orientationCircle = document.getElementById('orientation-circle');
-          
-          const getDeviceOrientation = () => {
-            if (window.screen.orientation && window.screen.orientation.type) {
-              return window.screen.orientation.type.startsWith('portrait') ? 'portrait' : 'landscape';
-            }
-            return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
-          };
-          
-          const updateOrientationIndicator = () => {
-            const orientation = getDeviceOrientation();
-            orientationValue.textContent = `Orientation: ${orientation}`;
-            if (orientation === 'portrait') {
-              orientationCircle.style.backgroundColor = 'blue';
-            } else if (orientation === 'landscape') {
-              orientationCircle.style.backgroundColor = 'purple';
-            } else {
-              orientationCircle.style.backgroundColor = 'gray';
-            }
-            console.log(`Orientation: ${orientation}`);
-          };
-          
-          const init = () => {
-            updateOrientationIndicator();
-            window.addEventListener('resize', debounce(updateOrientationIndicator));
-            window.addEventListener('orientationchange', debounce(updateOrientationIndicator));
-          };
-          
-          return { init };
-        })();
-        
-        // Camera Stream Module with OpenCV Processing
-        const CameraStream = (() => {
-          const videoElement = document.getElementById('camera-stream');
-          const overlayCanvas = document.getElementById('overlayCanvas');
-          const loadingIndicator = document.getElementById('loading-indicator');
-          const cameraFpsValue = document.getElementById('camera-fps-value');
-          const cameraFpsCircle = document.getElementById('camera-fps-circle');
-          const frameCanvas = document.getElementById('frameCanvas');
-          const overlayCtx = overlayCanvas.getContext('2d');
-          const frameCtx = frameCanvas.getContext('2d');
-          
-          let currentStream = null;
-          let currentCameraIndex = 0;
-          let currentResolution = {
-            width: 1280,
-            height: 720,
-            label: 'Portrait 1280x720',
-            orientation: 'landscape'
-          };
-          let userChosenFps = 60;
-          let cameras = [];
-          let isChangingStream = false;
-          let player = null;
-          let debounceTimeout;
-          let processor = null;
-          let reader = null;
-          let processing = false;
-          let frameRate = 0;
-          let lastCameraFrameTime = performance.now();
-          
-          // Web Workers
-          let workers = [];
-          let workerCount = 1;
-          let workerQueue = [];
-          let activeWorkers = 0;
-
-          // Example resolution list (swapped labels as requested)
-          const resolutions = [
-            { label: 'Landscape 480x640', width: 480, height: 640, orientation: 'portrait' },
-            { label: 'Portrait 640x480', width: 640, height: 480, orientation: 'landscape' },
-            { label: 'Landscape 720x1280', width: 720, height: 1280, orientation: 'portrait' },
-            { label: 'Portrait 1280x720', width: 1280, height: 720, orientation: 'landscape' },
-            { label: 'Landscape 1080x1920', width: 1080, height: 1920, orientation: 'portrait' },
-            { label: 'Portrait 1920x1080', width: 1920, height: 1080, orientation: 'landscape' },
-            { label: 'Landscape 1440x2560', width: 1440, height: 2560, orientation: 'portrait' },
-            { label: 'Portrait 2560x1440', width: 2560, height: 1440, orientation: 'landscape' },
-            { label: 'Landscape 2160x3840', width: 2160, height: 3840, orientation: 'portrait' },
-            { label: 'Portrait 3840x2160', width: 3840, height: 2160, orientation: 'landscape' }
-          ];
-          
-          // Orientation indicator only
-          const getDeviceOrientation = () => {
-            if (window.screen.orientation && window.screen.orientation.type) {
-              return window.screen.orientation.type.startsWith('portrait') ? 'portrait' : 'landscape';
-            }
-            return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
-          };
-          
-          const updateCameraFpsIndicator = (fps) => {
-            cameraFpsValue.textContent = `Camera FPS: ${fps}`;
-            if (fps >= userChosenFps * 0.9) {
-              cameraFpsCircle.style.backgroundColor = 'green';
-            } else if (fps >= userChosenFps * 0.6) {
-              cameraFpsCircle.style.backgroundColor = 'yellow';
-            } else {
-              cameraFpsCircle.style.backgroundColor = 'red';
-            }
-            console.log(`Camera FPS updated: ${fps}`);
-          };
-          
-          const initializeVideoJS = () => {
-            if (!player) {
-              player = videojs('camera-stream', {
-                autoplay: true,
-                muted: true,
-                controls: false,
-                fluid: true
-              });
-              console.log('Video.js initialized');
-            }
-          };
-          
-          const resizeVideo = () => {
-            console.log('Window or orientation changed → resizing if needed.');
-          };
-          
-          const getCameras = async () => {
-            try {
-              const devices = await navigator.mediaDevices.enumerateDevices();
-              cameras = devices.filter(d => d.kind === 'videoinput');
-              console.log(`Found ${cameras.length} camera(s).`);
-              if (cameras.length === 0) {
-                alert('No cameras found on this device.');
-              }
-            } catch (err) {
-              console.error('Error enumerating devices:', err);
-              alert('Unable to access camera devices.');
-            }
-          };
-          
-          const displayStreamSettings = (settings) => {
-            const msg = `Current Resolution: ${settings.width}x${settings.height}, FPS: ${settings.frameRate}`;
-            Modal.show(msg, [{ label: 'OK', onClick: Modal.close }]);
-            console.log(msg);
-          };
-          
-          const startStream = async () => {
-            if (isChangingStream || !opencvReady) return;
-            isChangingStream = true;
-            
-            try {
-              loadingIndicator.style.display = 'block';
-              
-              // Stop old stream
-              if (currentStream) {
-                console.log('Stopping previous stream tracks...');
-                currentStream.getTracks().forEach(t => t.stop());
-              }
-              
-              // Build constraints with EXACT user-chosen FPS. If it fails, we do NOT fallback.
-              const constraints = {
-                video: {
-                  deviceId: cameras[currentCameraIndex]?.deviceId
-                    ? { exact: cameras[currentCameraIndex].deviceId }
-                    : undefined,
-                  facingMode: 'environment',
-                  width: { ideal: currentResolution.width },
-                  height: { ideal: currentResolution.height },
-                  frameRate: { ideal: userChosenFps, max: userChosenFps }
-                }
-              };
-              
-              console.log('Requesting media with:', constraints);
-              
-              let newStream;
-              try {
-                newStream = await navigator.mediaDevices.getUserMedia(constraints);
-              } catch (err) {
-                // If Overconstrained => show modal, do not fallback
-                if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
-                  console.error('Overconstrained: your device can’t do that FPS/res combo.');
-                  Modal.show(
-                    `Your device does not support ${currentResolution.width}x${currentResolution.height} @ ${userChosenFps}fps.`,
-                    [{ label: 'OK', onClick: Modal.close }]
-                  );
-                  throw err;
-                } else {
-                  throw err;
-                }
-              }
-              
-              currentStream = newStream;
-              videoElement.srcObject = currentStream;
-              await videoElement.play();
-              
-              console.log('Stream started, video playing');
-              initializeVideoJS();
-              
-              // Actual track settings
-              const track = currentStream.getVideoTracks()[0];
-              const s = track.getSettings();
-              console.log(`Actual: ${s.width}x${s.height} @ ${s.frameRate}fps`);
-              
-              updateCameraFpsIndicator(s.frameRate);
-              displayStreamSettings(s);
-              
-              // If resolution mismatch
-              if (
-                (s.width !== currentResolution.width && s.height !== currentResolution.height) &&
-                (s.width !== currentResolution.height && s.height !== currentResolution.width)
-              ) {
-                Modal.show(
-                  `Requested ${currentResolution.width}x${currentResolution.height}, got ${s.width}x${s.height} instead.`,
-                  [{ label: 'OK', onClick: Modal.close }]
-                );
-                console.warn(`Resolution mismatch: asked for ${currentResolution.width}x${currentResolution.height}, got ${s.width}x${s.height}`);
-              }
-
-              // Set up MediaStreamTrackProcessor
-              setupTrackProcessor(track);
-
-            } catch (err) {
-              console.error('Error starting stream:', err);
-              if (err.name === 'NotAllowedError') {
-                alert('Camera access was denied. Please enable it in your browser settings.');
-              } else if (err.name === 'NotFoundError') {
-                alert('No camera device found.');
-              } else if (err.name !== 'OverconstrainedError' && err.name !== 'ConstraintNotSatisfiedError') {
-                alert(`Error accessing camera: ${err.name}`);
-              }
-            } finally {
-              loadingIndicator.style.display = 'none';
-              isChangingStream = false;
-            }
-          };
-          
-          const switchCamera = async () => {
-            if (cameras.length < 2) {
-              Modal.show('No alternate cameras found.');
-              return;
-            }
-            
-            const camOptions = cameras.map((cam, i) => ({
-              label: cam.label || `Camera ${i + 1}`,
-              onClick: () => {
-                currentCameraIndex = i;
-                Modal.close();
-                startStream();
-                console.log(`Switched to camera index: ${i}`);
-              }
-            }));
-            
-            Modal.show('Select a camera:', camOptions);
-          };
-          
-          const switchResolution = () => {
-            const opts = resolutions.map(r => ({
-              label: r.label,
-              onClick: async () => {
-                currentResolution = { 
-                  width: r.width,
-                  height: r.height,
-                  orientation: r.orientation,
-                  label: r.label
-                };
-                Modal.close();
-                await startStream();
-                console.log(`Switched resolution: ${r.label}`);
-              }
-            }));
-            
-            Modal.show('Select a resolution:', opts);
-          };
-          
-          const switchFps = () => {
-            const fpsOpts = [
-              {
-                label: '30 FPS',
-                onClick: async () => {
-                  userChosenFps = 30;
-                  Modal.close();
-                  await startStream();
-                  console.log('Switched to 30 FPS');
-                }
-              },
-              {
-                label: '60 FPS',
-                onClick: async () => {
-                  userChosenFps = 60;
-                  Modal.close();
-                  await startStream();
-                  console.log('Switched to 60 FPS');
-                }
-              }
-            ];
-            
-            Modal.show('Select FPS:', fpsOpts);
-          };
-          
-          const debounce = (func, delay = 300) => {
-            return function(...args) {
-              clearTimeout(debounceTimeout);
-              debounceTimeout = setTimeout(() => func.apply(this, args), delay);
-            };
-          };
-
-          // Web Workers Setup
-          const setupWorkers = () => {
-            // Terminate existing workers
-            workers.forEach(worker => worker.terminate());
-            workers = [];
-
-            // Create new workers based on user selection
-            for (let i = 0; i < preprocessSettings.workers; i++) {
-              const worker = new Worker(URL.createObjectURL(new Blob([`
-                importScripts('https://docs.opencv.org/4.6.0/opencv.js');
-
-                let opencvReady = false;
-                cv['onRuntimeInitialized'] = () => {
-                  opencvReady = true;
-                  postMessage({ type: 'ready' });
-                };
-
-                self.onmessage = function(e) {
-                  if (!opencvReady) {
-                    // Notify main thread that worker is not ready
-                    postMessage({ type: 'error', message: 'OpenCV not initialized' });
-                    return;
-                  }
-                  const { imageData, settings } = e.data;
-                  const processedData = processFrame(imageData, settings);
-                  self.postMessage({ type: 'processed', processedData });
-                };
-
-                function processFrame(imageData, settings) {
-                  const srcMat = cv.matFromImageData(imageData);
-                  // Grayscale
-                  if (settings.grayscale.enabled) {
-                    cv.cvtColor(srcMat, srcMat, cv.COLOR_RGBA2GRAY, 0);
-                    cv.cvtColor(srcMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
-                  }
-                  // Threshold
-                  if (settings.threshold.enabled) {
-                    let tVal = (settings.threshold.value / 100) * 255;
-                    cv.threshold(srcMat, srcMat, tVal, 255, cv.THRESH_BINARY);
-                  }
-                  // Edge Detection
-                  if (settings.edges.enabled) {
-                    let eVal = settings.edges.value;
-                    let t1 = eVal * 2.5; 
-                    let t2 = t1 * 1.5;
-                    let edgeMat = new cv.Mat();
-                    cv.Canny(srcMat, edgeMat, t1, t2);
-                    cv.cvtColor(edgeMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
-                    edgeMat.delete();
-                  }
-                  // Highlights
-                  if (settings.highlights.enabled) {
-                    let kernelSize = Math.max(1, Math.floor(settings.highlights.value / 10));
-                    let kernel = cv.Mat.ones(kernelSize, kernelSize, cv.CV_8U);
-                    let highlightMat = new cv.Mat();
-                    cv.dilate(srcMat, highlightMat, kernel);
-                    highlightMat.copyTo(srcMat);
-                    kernel.delete();
-                    highlightMat.delete();
-                  }
-                  // Brightness
-                  if (settings.brightness.enabled) {
-                    let bVal = parseInt(settings.brightness.value, 10);
-                    let alpha = (bVal - 50);
-                    cv.convertScaleAbs(srcMat, srcMat, 1, alpha);
-                  }
-
-                  const processed = new ImageData(new Uint8ClampedArray(srcMat.data), srcMat.cols, srcMat.rows);
-                  srcMat.delete();
-                  return processed;
-                }
-              `], { type: 'application/javascript' })));
-              
-              worker.onmessage = function(e) {
-                const { type, processedData, message } = e.data;
-                if (type === 'ready') {
-                  console.log('Worker ready');
-                } else if (type === 'processed') {
-                  overlayCtx.putImageData(processedData, 0, 0);
-                  activeWorkers--;
-                  if (workerQueue.length > 0) {
-                    const nextFrame = workerQueue.shift();
-                    worker.postMessage(nextFrame);
-                    activeWorkers++;
-                  }
-                } else if (type === 'error') {
-                  console.error(`Worker error: ${message}`);
-                }
-              };
-              workers.push(worker);
-            }
-          };
-
-          const processFrameWithOpenCV = (videoFrame) => {
-            // Draw the VideoFrame onto frameCanvas
-            frameCanvas.width = videoFrame.displayWidth;
-            frameCanvas.height = videoFrame.displayHeight;
-            frameCtx.clearRect(0, 0, frameCanvas.width, frameCanvas.height);
-            
-            try {
-              frameCtx.drawImage(videoFrame, 0, 0, frameCanvas.width, frameCanvas.height);
-            } catch (err) {
-              console.error('drawImage(VideoFrame) not supported:', err);
-              return;
-            }
-
-            // Get image data
-            const imageData = frameCtx.getImageData(0, 0, frameCanvas.width, frameCanvas.height);
-
-            // Enqueue frame for processing
-            if (activeWorkers < workers.length) {
-              workers[activeWorkers].postMessage({ imageData, settings: preprocessSettings });
-              activeWorkers++;
-            } else {
-              workerQueue.push({ imageData, settings: preprocessSettings });
-            }
-
-            // Update camera FPS
-            const now = performance.now();
-            frameRate = 1000 / (now - lastCameraFrameTime);
-            lastCameraFrameTime = now;
-            updateCameraFpsIndicator(Math.round(frameRate));
-          };
-
-          const setupTrackProcessor = (track) => {
-            if (typeof MediaStreamTrackProcessor === 'undefined') {
-              alert('MediaStreamTrackProcessor is not supported in your browser.');
-              return;
-            }
-
-            try {
-              processor = new MediaStreamTrackProcessor({ track });
-              reader = processor.readable.getReader();
-              console.log('MediaStreamTrackProcessor initialized');
-              processFrames();
-            } catch (err) {
-              console.error('Error setting up MediaStreamTrackProcessor:', err);
-            }
-          };
-
-          const processFrames = async () => {
-            while (true) {
-              try {
-                const result = await reader.read();
-                if (result.done) {
-                  console.log('No more camera frames (stream ended).');
-                  break;
-                }
-
-                const frame = result.value; // VideoFrame object
-
-                if (opencvReady) {
-                  processFrameWithOpenCV(frame);
-                }
-
-                // Release the frame
-                frame.close();
-              } catch (err) {
-                console.error('Error reading frames:', err);
-                break;
-              }
-            }
-          };
-
-          const init = async () => {
-            await getCameras();
-            await startStream();
-            setupWorkers();
-          };
-          
-          return { init, switchCamera, switchResolution, switchFps, setupWorkers };
-        })();
-        
-        // Permissions Module
-        const Permissions = (() => {
-          const checkPermissions = async () => {
-            try {
-              const status = await navigator.permissions.query({ name: 'camera' });
-              handlePermissionState(status.state);
-              
-              status.onchange = () => {
-                handlePermissionState(status.state);
-              };
-            } catch (err) {
-              console.error('Error checking camera permissions:', err);
-              Modal.show('An error occurred while accessing camera permissions.');
-            }
-          };
-          
-          const handlePermissionState = (state) => {
-            switch(state) {
-              case 'denied':
-                Modal.show('Camera access denied. Enable it in your browser settings.');
-                break;
-              case 'prompt':
-                requestCameraAccess();
-                break;
-              case 'granted':
-                // Initialize CameraStream if OpenCV is ready
-                if (typeof cv !== 'undefined' && cv['onRuntimeInitialized']) {
-                  // OpenCV initialization will call CameraStream.init()
-                } else {
-                  // Wait for OpenCV to initialize
-                  console.log('Camera permissions granted. Waiting for OpenCV to initialize.');
-                }
-                break;
-              default:
-                break;
-            }
-          };
-          
-          const requestCameraAccess = async () => {
-            try {
-              await navigator.mediaDevices.getUserMedia({ video: true });
-              Modal.show(
-                'Camera access granted. The page will refresh to start the camera stream.',
-                [
-                  {
-                    label: 'Continue',
-                    onClick: () => {
-                      Modal.close();
-                      location.reload();
-                    }
-                  }
-                ]
-              );
-            } catch (error) {
-              console.error('Error requesting camera access:', error);
-              Modal.show('Camera access is required to use this application.');
-            }
-          };
-          
-          const init = () => {
-            checkPermissions();
-          };
-          
-          return { init };
-        })();
-        
-        // Initialize Everything
-        document.addEventListener('DOMContentLoaded', () => {
-          FPSCounter.start();         // Start the rendering FPS loop
-          Orientation.init();         // Initialize orientation indicators
-          PreprocessingModal.init();  // Initialize preprocessing controls
-          Permissions.init();         // Check camera permissions
-          // Hook up controls
-          document.getElementById('change-camera').addEventListener('click', CameraStream.switchCamera);
-          document.getElementById('change-resolution').addEventListener('click', debounce(CameraStream.switchResolution));
-          document.getElementById('change-fps').addEventListener('click', debounce(CameraStream.switchFps));
-        });
-        
-        // Debounce function
-        function debounce(func, delay = 300) {
-          let timeout;
-          return function(...args) {
-            clearTimeout(timeout);
-            timeout = setTimeout(() => func.apply(this, args), delay);
-          };
-        }
-        
-      </script>
   
 </body>
 </html>

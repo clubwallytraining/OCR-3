@@ -433,9 +433,11 @@
     </div>
   </div>
   
-  <!-- JavaScript -->
+  <!-- JavaScript Libraries -->
   <script src="./opencv.js" defer></script> <!-- Ensure opencv.js is in the same directory -->
   <script src="https://vjs.zencdn.net/8.0.4/video.min.js" defer></script>
+  
+  <!-- Main JavaScript -->
   <script>
     (function() {
       // Global Flags
@@ -1047,34 +1049,19 @@
           }
         };
 
-        const processFrameWithOpenCV = (videoFrame) => {
-          // Draw the VideoFrame onto frameCanvas
-          frameCanvas.width = videoFrame.displayWidth;
-          frameCanvas.height = videoFrame.displayHeight;
-          
-          try {
-            frameCtx.drawImage(videoFrame, 0, 0, frameCanvas.width, frameCanvas.height);
-          } catch (err) {
-            console.error('drawImage(VideoFrame) not supported:', err);
-            return;
+        // Frame Processing with Workers
+        const processFrameWithWorkers = (imageData) => {
+          if (workerQueue.length > 50) { // Limit the queue size to prevent memory issues
+            console.warn('Dropping frame: queue is full.');
+            workerQueue.shift();
           }
 
-          // Get image data
-          const imageData = frameCtx.getImageData(0, 0, frameCanvas.width, frameCanvas.height);
-
-          // Enqueue frame for processing
           if (activeWorkers < workers.length) {
             workers[activeWorkers].postMessage({ imageData, settings: preprocessSettings });
             activeWorkers++;
           } else {
             workerQueue.push({ imageData, settings: preprocessSettings });
           }
-
-          // Update camera FPS
-          const now = performance.now();
-          frameRate = 1000 / (now - lastCameraFrameTime);
-          lastCameraFrameTime = now;
-          updateCameraFpsIndicator(Math.round(frameRate));
         };
 
         const processFrameWithCanvasFallback = () => {
@@ -1117,7 +1104,16 @@
               const frame = result.value; // VideoFrame object
 
               if (opencvReady) {
-                processFrameWithOpenCV(frame);
+                // Draw the frame to the hidden canvas
+                frameCanvas.width = frame.displayWidth;
+                frameCanvas.height = frame.displayHeight;
+                frameCtx.drawImage(frame, 0, 0, frameCanvas.width, frameCanvas.height);
+
+                // Get image data
+                const imageData = frameCtx.getImageData(0, 0, frameCanvas.width, frameCanvas.height);
+
+                // Process frame with workers
+                processFrameWithWorkers(imageData);
               } else {
                 console.log('OpenCV not ready yet.');
               }
@@ -1273,21 +1269,12 @@
         
         const requestCameraAccess = async () => {
           try {
-            await navigator.mediaDevices.getUserMedia({ video: true });
-            Modal.show(
-              'Camera access granted. The page will refresh to start the camera stream.',
-              [
-                {
-                  label: 'Continue',
-                  onClick: () => {
-                    Modal.close();
-                    location.reload();
-                  }
-                }
-              ]
-            );
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            console.log('Camera access granted.');
+            stream.getTracks().forEach((track) => track.stop()); // Stop the temporary stream
           } catch (error) {
             console.error('Error requesting camera access:', error);
+            alert('Camera access is required for this app to function.');
             Modal.show('Camera access is required to use this application.');
           }
         };
@@ -1300,7 +1287,7 @@
       })();
       
       // Initialize Everything
-      document.addEventListener('DOMContentLoaded', () => {
+      document.addEventListener('DOMContentLoaded', async () => {
         FPSCounter.start();         // Start the rendering FPS loop
         Orientation.init();         // Initialize orientation indicators
         PreprocessingModal.init();  // Initialize preprocessing controls

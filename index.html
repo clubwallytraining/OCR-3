@@ -18,6 +18,19 @@
   <!-- OpenCV.js from the official docs/opencv CDN (example version 4.6.0) -->
   <script src="https://docs.opencv.org/4.6.0/opencv.js" defer></script>
   
+  <!-- OpenCV Initialization Script -->
+  <script defer>
+    // Initialize OpenCV and set the callback once it's ready
+    cv['onRuntimeInitialized'] = () => {
+      console.log('OpenCV is fully initialized');
+      document.getElementById('opencv-status').style.color = 'green';
+      // Initialize the main application
+      if (window.Main && typeof window.Main.init === 'function') {
+        window.Main.init();
+      }
+    };
+  </script>
+  
   <!-- Dark Theme Styling -->
   <style>
     :root {
@@ -63,6 +76,7 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
+      z-index: 1;
     }
 
     /* Overlay Canvas */
@@ -73,6 +87,7 @@
       width: 100%;
       height: 100%;
       pointer-events: none;
+      z-index: 2;
     }
 
     /* Controls styling */
@@ -83,7 +98,7 @@
       transform: translateX(-50%);
       display: flex;
       gap: 10px;
-      z-index: 2;
+      z-index: 3;
     }
     
     .control-button {
@@ -113,7 +128,7 @@
       padding: 5px 10px;
       border-radius: 5px;
       font-size: 14px;
-      z-index: 2;
+      z-index: 3;
       display: flex;
       align-items: center;
       gap: 5px;
@@ -136,7 +151,7 @@
       padding: 5px 10px;
       border-radius: 5px;
       font-size: 14px;
-      z-index: 2;
+      z-index: 3;
       display: flex;
       align-items: center;
       gap: 5px;
@@ -159,7 +174,7 @@
       padding: 5px 10px;
       border-radius: 5px;
       font-size: 14px;
-      z-index: 2;
+      z-index: 3;
       display: flex;
       align-items: center;
       gap: 5px;
@@ -183,7 +198,7 @@
       padding: 20px 30px;
       border-radius: 10px;
       display: none;
-      z-index: 3;
+      z-index: 4;
       font-size: 18px;
     }
     
@@ -191,7 +206,7 @@
     .modal {
       display: none; 
       position: fixed; 
-      z-index: 4; 
+      z-index: 5; 
       left: 0;
       top: 0;
       width: 100%; 
@@ -282,8 +297,9 @@
       position: fixed;
       top: 20px;
       right: 20px;
-      z-index: 2;
+      z-index: 3;
       font-weight: bold;
+      color: red;
     }
 
     /* Responsive adjustments */
@@ -309,7 +325,7 @@
         font-size: 16px;
       }
       
-      #fps-counter, #orientation-indicator, #camera-fps-indicator {
+      #fps-counter, #orientation-indicator, #camera-fps-indicator, #opencv-status {
         font-size: 12px;
         padding: 4px 8px;
       }
@@ -336,7 +352,7 @@
   <div id="loading-indicator">Initializing camera...</div>
   
   <!-- OpenCV Status Indicator -->
-  <div id="opencv-status" style="color: red;">OpenCV</div>
+  <div id="opencv-status">OpenCV Loading...</div>
   
   <!-- Browser Rendering FPS Counter -->
   <div id="fps-counter">
@@ -449,710 +465,714 @@
     </div>
   </div>
   
-  <!-- JavaScript -->
+  <!-- Main JavaScript -->
   <script>
     (function() {
-      // OpenCV Initialization
-      let opencvReady = false;
-      cv['onRuntimeInitialized'] = () => {
-        console.log('OpenCV is fully initialized');
-        opencvReady = true;
-        document.getElementById('opencv-status').style.color = 'green';
-      };
-      
-      // Preprocessing Settings
-      const preprocessSettings = {
-        grayscale: { enabled: false, value: 100 },
-        threshold: { enabled: false, value: 50 },
-        edges: { enabled: false, value: 50 },
-        highlights: { enabled: false, value: 50 },
-        brightness: { enabled: false, value: 50 },
-        threads: 1
-      };
-      
-      // Helper to create DOM elements
-      const createElement = (tag, attrs = {}, ...children) => {
-        const el = document.createElement(tag);
-        for (const k in attrs) {
-          if (k.startsWith('data-') || k.startsWith('aria-')) {
-            el.setAttribute(k, attrs[k]);
-          } else if (k === 'class') {
-            el.className = attrs[k];
-          } else if (k === 'style') {
-            el.style.cssText = attrs[k];
-          } else {
-            el[k] = attrs[k];
-          }
-        }
-        children.forEach(child => {
-          if (typeof child === 'string') {
-            el.appendChild(document.createTextNode(child));
-          } else if (child instanceof Node) {
-            el.appendChild(child);
-          }
-        });
-        return el;
-      };
-      
-      // Simple Modal
-      const Modal = (() => {
-        const modal = document.getElementById('modal');
-        const modalClose = document.getElementById('modal-close');
-        const modalMessage = document.getElementById('modal-message');
-        const modalOptions = document.getElementById('modal-options');
-        
-        const show = (message, options = []) => {
-          modalMessage.textContent = message;
-          modalOptions.innerHTML = '';
-          options.forEach(opt => {
-            const button = createElement('button', {
-              class: 'modal-option',
-              onclick: opt.onClick,
-              'aria-label': opt.label
-            }, opt.label);
-            modalOptions.appendChild(button);
-          });
-          modal.style.display = 'flex';
-        };
-        
-        const close = () => {
-          modal.style.display = 'none';
-        };
-        
-        modalClose.addEventListener('click', close);
-        window.addEventListener('click', (e) => {
-          if (e.target === modal) {
-            close();
-          }
-        });
-        window.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape' && modal.style.display === 'flex') {
-            close();
-          }
-        });
-        
-        return { show, close };
-      })();
-      
-      // Preprocessing Modal
-      const PreprocessingModal = (() => {
-        const modal = document.getElementById('preprocessing-modal');
-        const modalClose = document.getElementById('preprocessing-modal-close');
-        
-        const show = () => {
-          modal.style.display = 'flex';
-        };
-        
-        const close = () => {
-          modal.style.display = 'none';
-        };
-        
-        modalClose.addEventListener('click', close);
-        window.addEventListener('click', (e) => {
-          if (e.target === modal) {
-            close();
-          }
-        });
-        
-        return { show, close };
-      })();
-      
-      // FPS Counter
-      const FPSCounter = (() => {
-        const fpsVal = document.getElementById('fps-value');
-        const fpsIndicator = document.getElementById('fps-indicator');
-        let frameCount = 0;
-        let lastTime = performance.now();
-        const targetFPS = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fps-target')) || 120;
-        const acceptableFPS = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fps-acceptable')) || 60;
-        
-        const update = () => {
-          frameCount++;
-          const now = performance.now();
-          if (now - lastTime >= 1000) {
-            const currentFPS = frameCount;
-            fpsVal.textContent = `FPS: ${currentFPS}`;
-            if (currentFPS >= targetFPS) {
-              fpsIndicator.style.backgroundColor = 'green';
-            } else if (currentFPS >= acceptableFPS) {
-              fpsIndicator.style.backgroundColor = 'yellow';
-            } else {
-              fpsIndicator.style.backgroundColor = 'red';
-            }
-            frameCount = 0;
-            lastTime = now;
-          }
-          requestAnimationFrame(update);
-        };
-        
-        const start = () => requestAnimationFrame(update);
-        return { start };
-      })();
-      
-      // Camera Stream Module
-      const CameraStream = (() => {
-        const videoElement = document.getElementById('camera-stream');
-        const overlayCanvas = document.getElementById('overlayCanvas');
-        const frameCanvas = document.getElementById('frameCanvas');
-        const loadingIndicator = document.getElementById('loading-indicator');
-        const orientationValue = document.getElementById('orientation-value');
-        const orientationCircle = document.getElementById('orientation-circle');
-        const cameraFpsValue = document.getElementById('camera-fps-value');
-        const cameraFpsCircle = document.getElementById('camera-fps-circle');
-        
-        let currentStream = null;
-        let currentCameraIndex = 0;
-        
-        // By default, let's do 720p
-        let currentResolution = {
-          width: 1280,
-          height: 720,
-          label: 'Portrait 1280x720',
-          orientation: 'landscape'
-        };
-        
-        // By default, request 60 fps
-        let userChosenFps = 60;
-        
-        let cameras = [];
-        let isChangingStream = false;
-        let player = null;
-        let debounceTimeout;
-        
-        // Example resolution list (swapped labels as requested)
-        const resolutions = [
-          { label: 'Landscape 480x640', width: 480, height: 640, orientation: 'portrait' },
-          { label: 'Portrait 640x480', width: 640, height: 480, orientation: 'landscape' },
-          { label: 'Landscape 720x1280', width: 720, height: 1280, orientation: 'portrait' },
-          { label: 'Portrait 1280x720', width: 1280, height: 720, orientation: 'landscape' },
-          { label: 'Landscape 1080x1920', width: 1080, height: 1920, orientation: 'portrait' },
-          { label: 'Portrait 1920x1080', width: 1920, height: 1080, orientation: 'landscape' },
-          { label: 'Landscape 1440x2560', width: 1440, height: 2560, orientation: 'portrait' },
-          { label: 'Portrait 2560x1440', width: 2560, height: 1440, orientation: 'landscape' },
-          { label: 'Landscape 2160x3840', width: 2160, height: 3840, orientation: 'portrait' },
-          { label: 'Portrait 3840x2160', width: 3840, height: 2160, orientation: 'landscape' }
-        ];
-        
-        // Orientation indicator only
-        const getDeviceOrientation = () => {
-          if (window.screen.orientation && window.screen.orientation.type) {
-            return window.screen.orientation.type.startsWith('portrait') ? 'portrait' : 'landscape';
-          }
-          return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
-        };
-        
-        const updateOrientationIndicator = () => {
-          const orientation = getDeviceOrientation();
-          orientationValue.textContent = `Orientation: ${orientation}`;
-          if (orientation === 'portrait') {
-            orientationCircle.style.backgroundColor = 'blue';
-          } else if (orientation === 'landscape') {
-            orientationCircle.style.backgroundColor = 'purple';
-          } else {
-            orientationCircle.style.backgroundColor = 'gray';
-          }
-          console.log(`Orientation: ${orientation}`);
-        };
-        
-        const updateCameraFpsIndicator = (fps) => {
-          cameraFpsValue.textContent = `Camera FPS: ${fps}`;
-          if (fps >= userChosenFps) {
-            cameraFpsCircle.style.backgroundColor = 'green';
-          } else if (fps >= userChosenFps / 2) {
-            cameraFpsCircle.style.backgroundColor = 'yellow';
-          } else {
-            cameraFpsCircle.style.backgroundColor = 'red';
-          }
-          console.log(`Camera FPS updated: ${fps}`);
-        };
-        
-        const initializeVideoJS = () => {
-          if (!player) {
-            player = videojs('camera-stream', {
-              autoplay: true,
-              muted: true,
-              controls: false,
-              fluid: true
-            });
-            console.log('Video.js initialized');
-          }
-        };
-        
-        const resizeVideo = () => {
-          console.log('Window or orientation changed → resizing if needed.');
-        };
-        
-        const getCameras = async () => {
-          try {
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            cameras = devices.filter(d => d.kind === 'videoinput');
-            console.log(`Found ${cameras.length} camera(s).`);
-            if (cameras.length === 0) {
-              alert('No cameras found on this device.');
-            }
-          } catch (err) {
-            console.error('Error enumerating devices:', err);
-            alert('Unable to access camera devices.');
-          }
-        };
-        
-        const displayStreamSettings = (settings) => {
-          const msg = `Current Resolution: ${settings.width}x${settings.height}, FPS: ${settings.frameRate}`;
-          Modal.show(msg, [{ label: 'OK', onClick: Modal.close }]);
-          console.log(msg);
-        };
-        
-        const startStream = async () => {
-          if (isChangingStream) return;
-          isChangingStream = true;
+      // Define the Main application object
+      window.Main = {
+        init: function() {
+          // OpenCV is ready, update the status
+          document.getElementById('opencv-status').textContent = 'OpenCV Loaded';
           
-          try {
-            loadingIndicator.style.display = 'block';
-            updateOrientationIndicator();
-            
-            // Stop old stream
-            if (currentStream) {
-              console.log('Stopping previous stream tracks...');
-              currentStream.getTracks().forEach(t => t.stop());
-            }
-            
-            // Build constraints with EXACT user-chosen FPS. If it fails, we do NOT fallback.
-            const constraints = {
-              video: {
-                deviceId: cameras[currentCameraIndex]?.deviceId
-                  ? { exact: cameras[currentCameraIndex].deviceId }
-                  : undefined,
-                facingMode: 'environment',
-                width: { ideal: currentResolution.width },
-                height: { ideal: currentResolution.height },
-                frameRate: { ideal: userChosenFps, max: userChosenFps }
-              }
-            };
-            
-            console.log('Requesting media with:', constraints);
-            
-            let newStream;
-            try {
-              newStream = await navigator.mediaDevices.getUserMedia(constraints);
-            } catch (err) {
-              // If Overconstrained => show modal, do not fallback
-              if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
-                console.error('Overconstrained: your device can’t do that FPS/res combo.');
-                Modal.show(
-                  `Your device does not support ${currentResolution.width}x${currentResolution.height} @ ${userChosenFps}fps.`,
-                  [{ label: 'OK', onClick: Modal.close }]
-                );
-                throw err;
-              } else {
-                throw err;
-              }
-            }
-            
-            currentStream = newStream;
-            videoElement.srcObject = currentStream;
-            await videoElement.play();
-            
-            console.log('Stream started, video playing');
-            initializeVideoJS();
-            
-            // Actual track settings
-            const track = currentStream.getVideoTracks()[0];
-            const s = track.getSettings();
-            console.log(`Actual: ${s.width}x${s.height} @ ${s.frameRate}fps`);
-            
-            updateCameraFpsIndicator(s.frameRate);
-            displayStreamSettings(s);
-            
-            // If resolution mismatch
-            if (
-              (s.width !== currentResolution.width && s.height !== currentResolution.height) &&
-              (s.width !== currentResolution.height && s.height !== currentResolution.width)
-            ) {
-              Modal.show(
-                `Requested ${currentResolution.width}x${currentResolution.height}, got ${s.width}x${s.height} instead.`,
-                [{ label: 'OK', onClick: Modal.close }]
-              );
-              console.warn(`Resolution mismatch: asked for ${currentResolution.width}x${currentResolution.height}, got ${s.width}x${s.height}`);
-            }
-            
-            // Start processing frames with OpenCV if ready
-            if (opencvReady) {
-              await processCameraStreamWithTrackProcessor(currentStream);
-            }
-            
-          } catch (err) {
-            console.error('Error starting stream:', err);
-            if (err.name === 'NotAllowedError') {
-              alert('Camera access was denied. Please enable it in your browser settings.');
-            } else if (err.name === 'NotFoundError') {
-              alert('No camera device found.');
-            } else if (err.name !== 'OverconstrainedError' && err.name !== 'ConstraintNotSatisfiedError') {
-              alert(`Error accessing camera: ${err.name}`);
-            }
-          } finally {
-            loadingIndicator.style.display = 'none';
-            isChangingStream = false;
-          }
-        };
-        
-        const switchCamera = async () => {
-          if (cameras.length < 2) {
-            Modal.show('No alternate cameras found.');
-            return;
-          }
-          
-          const camOptions = cameras.map((cam, i) => ({
-            label: cam.label || `Camera ${i + 1}`,
-            onClick: () => {
-              currentCameraIndex = i;
-              Modal.close();
-              startStream();
-              console.log(`Switched to camera index: ${i}`);
-            }
-          }));
-          
-          Modal.show('Select a camera:', camOptions);
-        };
-        
-        const switchResolution = () => {
-          const opts = resolutions.map(r => ({
-            label: r.label,
-            onClick: async () => {
-              currentResolution = { 
-                width: r.width,
-                height: r.height,
-                orientation: r.orientation,
-                label: r.label
-              };
-              Modal.close();
-              await startStream();
-              console.log(`Switched resolution: ${r.label}`);
-            }
-          }));
-          
-          Modal.show('Select a resolution:', opts);
-        };
-        
-        const switchFps = () => {
-          const fpsOpts = [
-            {
-              label: '30 FPS',
-              onClick: async () => {
-                userChosenFps = 30;
-                Modal.close();
-                await startStream();
-                console.log('Switched to 30 FPS');
-              }
-            },
-            {
-              label: '60 FPS',
-              onClick: async () => {
-                userChosenFps = 60;
-                Modal.close();
-                await startStream();
-                console.log('Switched to 60 FPS');
-              }
-            }
-          ];
-          
-          Modal.show('Select FPS:', fpsOpts);
-        };
-        
-        const debounce = (func, delay = 300) => {
-          return function(...args) {
-            clearTimeout(debounceTimeout);
-            debounceTimeout = setTimeout(() => func.apply(this, args), delay);
+          // Initialize Preprocessing Settings
+          const preprocessSettings = {
+            grayscale: { enabled: false, value: 100 },
+            threshold: { enabled: false, value: 50 },
+            edges: { enabled: false, value: 50 },
+            highlights: { enabled: false, value: 50 },
+            brightness: { enabled: false, value: 50 },
+            threads: 1
           };
-        };
-        
-        const handleOrientationChange = () => {
-          console.log('Orientation changed');
-          updateOrientationIndicator();
-          resizeVideo();
-        };
-        
-        // Processing Frames with OpenCV
-        const processCameraStreamWithTrackProcessor = async (stream) => {
-          if (!('MediaStreamTrackProcessor' in window)) {
-            alert('MediaStreamTrackProcessor is not supported in your browser.');
-            return;
-          }
           
-          const track = stream.getVideoTracks()[0];
-          const processor = new MediaStreamTrackProcessor({ track });
-          const reader = processor.readable.getReader();
-          
-          while (true) {
-            const result = await reader.read();
-            if (result.done) {
-              console.log('No more camera frames (stream ended).');
-              break;
+          // Helper to create DOM elements
+          const createElement = (tag, attrs = {}, ...children) => {
+            const el = document.createElement(tag);
+            for (const k in attrs) {
+              if (k.startsWith('data-') || k.startsWith('aria-')) {
+                el.setAttribute(k, attrs[k]);
+              } else if (k === 'class') {
+                el.className = attrs[k];
+              } else if (k === 'style') {
+                el.style.cssText = attrs[k];
+              } else {
+                el[k] = attrs[k];
+              }
             }
+            children.forEach(child => {
+              if (typeof child === 'string') {
+                el.appendChild(document.createTextNode(child));
+              } else if (child instanceof Node) {
+                el.appendChild(child);
+              }
+            });
+            return el;
+          };
+          
+          // Simple Modal
+          const Modal = (() => {
+            const modal = document.getElementById('modal');
+            const modalClose = document.getElementById('modal-close');
+            const modalMessage = document.getElementById('modal-message');
+            const modalOptions = document.getElementById('modal-options');
             
-            const frame = result.value; // This is a VideoFrame object
-            
-            // Process frame with OpenCV
-            if (opencvReady) {
-              processFrameWithOpenCV(frame);
-            }
-            
-            // Release the frame
-            frame.close();
-          }
-        };
-        
-        const processFrameWithOpenCV = (videoFrame) => {
-          const ctx = frameCanvas.getContext('2d');
-          
-          // Resize frameCanvas to match video frame
-          frameCanvas.width = videoFrame.displayWidth;
-          frameCanvas.height = videoFrame.displayHeight;
-          
-          // Draw the VideoFrame onto frameCanvas
-          try {
-            ctx.drawImage(videoFrame, 0, 0, frameCanvas.width, frameCanvas.height);
-          } catch (err) {
-            console.error('drawImage(VideoFrame) not supported:', err);
-            return;
-          }
-          
-          // Get image data from frameCanvas
-          const imageData = ctx.getImageData(0, 0, frameCanvas.width, frameCanvas.height);
-          
-          // Convert to OpenCV Mat
-          let srcMat = cv.matFromImageData(imageData);
-          
-          // Apply Preprocessing Effects
-          // (A) Grayscale
-          if (preprocessSettings.grayscale.enabled) {
-            cv.cvtColor(srcMat, srcMat, cv.COLOR_RGBA2GRAY, 0);
-            cv.cvtColor(srcMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
-          }
-          
-          // (B) Threshold
-          if (preprocessSettings.threshold.enabled) {
-            let tVal = (preprocessSettings.threshold.value / 100) * 255;
-            cv.threshold(srcMat, srcMat, tVal, 255, cv.THRESH_BINARY);
-          }
-          
-          // (C) Edge Detection
-          if (preprocessSettings.edges.enabled) {
-            let eVal = preprocessSettings.edges.value;
-            let t1 = eVal * 2.5; 
-            let t2 = t1 * 1.5;
-            let edgeMat = new cv.Mat();
-            cv.Canny(srcMat, edgeMat, t1, t2);
-            cv.cvtColor(edgeMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
-            edgeMat.delete();
-          }
-          
-          // (D) Highlights
-          if (preprocessSettings.highlights.enabled) {
-            let kernelSize = Math.max(1, Math.floor(preprocessSettings.highlights.value / 10));
-            let kernel = cv.Mat.ones(kernelSize, kernelSize, cv.CV_8U);
-            let highlightMat = new cv.Mat();
-            cv.dilate(srcMat, highlightMat, kernel); // Example effect
-            highlightMat.copyTo(srcMat);
-            kernel.delete();
-            highlightMat.delete();
-          }
-          
-          // (E) Brightness
-          if (preprocessSettings.brightness.enabled) {
-            let bVal = parseInt(preprocessSettings.brightness.value, 10);
-            let alpha = (bVal - 50); // range -50..+50
-            cv.convertScaleAbs(srcMat, srcMat, 1, alpha);
-          }
-          
-          // Convert processed Mat back to ImageData
-          const processedData = new ImageData(
-            new Uint8ClampedArray(srcMat.data),
-            srcMat.cols,
-            srcMat.rows
-          );
-          
-          // Draw on overlay canvas
-          const overlayCtx = overlayCanvas.getContext('2d');
-          overlayCanvas.width = srcMat.cols;
-          overlayCanvas.height = srcMat.rows;
-          overlayCtx.putImageData(processedData, 0, 0);
-          
-          // Cleanup
-          srcMat.delete();
-        };
-        
-        const init = async () => {
-          await getCameras();
-          await startStream();
-          
-          window.addEventListener('resize', resizeVideo);
-          window.addEventListener('orientationchange', handleOrientationChange);
-          
-          navigator.mediaDevices.addEventListener('devicechange', async () => {
-            await getCameras();
-            console.log('Device change detected');
-          });
-        };
-        
-        return { init, switchCamera, switchResolution, switchFps, processFrameWithOpenCV };
-      })();
-      
-      // Permissions Module
-      const Permissions = (() => {
-        const checkPermissions = async () => {
-          try {
-            const status = await navigator.permissions.query({ name: 'camera' });
-            handlePermissionState(status.state);
-            
-            status.onchange = () => {
-              handlePermissionState(status.state);
-            };
-          } catch (err) {
-            console.error('Error checking camera perms:', err);
-            Modal.show('An error occurred while accessing camera permissions.');
-          }
-        };
-        
-        const handlePermissionState = (st) => {
-          switch(st) {
-            case 'denied':
-              Modal.show('Camera access denied. Enable it in your browser settings.');
-              break;
-            case 'prompt':
-              requestCameraAccess();
-              break;
-            case 'granted':
-              CameraStream.init().then(() => {
-                // Refresh the site if permissions are granted
-                console.log('Camera access granted. Refreshing the site.');
-                location.reload();
+            const show = (message, options = []) => {
+              modalMessage.textContent = message;
+              modalOptions.innerHTML = '';
+              options.forEach(opt => {
+                const button = createElement('button', {
+                  class: 'modal-option',
+                  onclick: opt.onClick,
+                  'aria-label': opt.label
+                }, opt.label);
+                modalOptions.appendChild(button);
               });
-              break;
-            default:
-              break;
-          }
-        };
-        
-        const requestCameraAccess = async () => {
-          try {
-            await navigator.mediaDevices.getUserMedia({ video: true });
-            Modal.show(
-              'Camera access granted. The page will refresh to start the camera stream.',
-              [
-                {
-                  label: 'Continue',
-                  onClick: () => {
-                    Modal.close();
-                    location.reload();
+              modal.style.display = 'flex';
+            };
+            
+            const close = () => {
+              modal.style.display = 'none';
+            };
+            
+            modalClose.addEventListener('click', close);
+            window.addEventListener('click', (e) => {
+              if (e.target === modal) {
+                close();
+              }
+            });
+            window.addEventListener('keydown', (e) => {
+              if (e.key === 'Escape' && modal.style.display === 'flex') {
+                close();
+              }
+            });
+            
+            return { show, close };
+          })();
+          
+          // Preprocessing Modal
+          const PreprocessingModal = (() => {
+            const modal = document.getElementById('preprocessing-modal');
+            const modalClose = document.getElementById('preprocessing-modal-close');
+            
+            const show = () => {
+              modal.style.display = 'flex';
+            };
+            
+            const close = () => {
+              modal.style.display = 'none';
+            };
+            
+            modalClose.addEventListener('click', close);
+            window.addEventListener('click', (e) => {
+              if (e.target === modal) {
+                close();
+              }
+            });
+            
+            return { show, close };
+          })();
+          
+          // FPS Counter
+          const FPSCounter = (() => {
+            const fpsVal = document.getElementById('fps-value');
+            const fpsIndicator = document.getElementById('fps-indicator');
+            let frameCount = 0;
+            let lastTime = performance.now();
+            const targetFPS = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fps-target')) || 120;
+            const acceptableFPS = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fps-acceptable')) || 60;
+            
+            const update = () => {
+              frameCount++;
+              const now = performance.now();
+              if (now - lastTime >= 1000) {
+                const currentFPS = frameCount;
+                fpsVal.textContent = `FPS: ${currentFPS}`;
+                if (currentFPS >= targetFPS) {
+                  fpsIndicator.style.backgroundColor = 'green';
+                } else if (currentFPS >= acceptableFPS) {
+                  fpsIndicator.style.backgroundColor = 'yellow';
+                } else {
+                  fpsIndicator.style.backgroundColor = 'red';
+                }
+                frameCount = 0;
+                lastTime = now;
+              }
+              requestAnimationFrame(update);
+            };
+            
+            const start = () => requestAnimationFrame(update);
+            return { start };
+          })();
+          
+          // Camera Stream Module
+          const CameraStream = (() => {
+            const videoElement = document.getElementById('camera-stream');
+            const overlayCanvas = document.getElementById('overlayCanvas');
+            const frameCanvas = document.getElementById('frameCanvas');
+            const loadingIndicator = document.getElementById('loading-indicator');
+            const orientationValue = document.getElementById('orientation-value');
+            const orientationCircle = document.getElementById('orientation-circle');
+            const cameraFpsValue = document.getElementById('camera-fps-value');
+            const cameraFpsCircle = document.getElementById('camera-fps-circle');
+            
+            let currentStream = null;
+            let currentCameraIndex = 0;
+            
+            // By default, let's do 720p
+            let currentResolution = {
+              width: 1280,
+              height: 720,
+              label: 'Portrait 1280x720',
+              orientation: 'landscape'
+            };
+            
+            // By default, request 60 fps
+            let userChosenFps = 60;
+            
+            let cameras = [];
+            let isChangingStream = false;
+            let player = null;
+            let debounceTimeout;
+            
+            // Example resolution list (swapped labels as requested)
+            const resolutions = [
+              { label: 'Landscape 480x640', width: 480, height: 640, orientation: 'portrait' },
+              { label: 'Portrait 640x480', width: 640, height: 480, orientation: 'landscape' },
+              { label: 'Landscape 720x1280', width: 720, height: 1280, orientation: 'portrait' },
+              { label: 'Portrait 1280x720', width: 1280, height: 720, orientation: 'landscape' },
+              { label: 'Landscape 1080x1920', width: 1080, height: 1920, orientation: 'portrait' },
+              { label: 'Portrait 1920x1080', width: 1920, height: 1080, orientation: 'landscape' },
+              { label: 'Landscape 1440x2560', width: 1440, height: 2560, orientation: 'portrait' },
+              { label: 'Portrait 2560x1440', width: 2560, height: 1440, orientation: 'landscape' },
+              { label: 'Landscape 2160x3840', width: 2160, height: 3840, orientation: 'portrait' },
+              { label: 'Portrait 3840x2160', width: 3840, height: 2160, orientation: 'landscape' }
+            ];
+            
+            // Orientation indicator only
+            const getDeviceOrientation = () => {
+              if (window.screen.orientation && window.screen.orientation.type) {
+                return window.screen.orientation.type.startsWith('portrait') ? 'portrait' : 'landscape';
+              }
+              return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+            };
+            
+            const updateOrientationIndicator = () => {
+              const orientation = getDeviceOrientation();
+              orientationValue.textContent = `Orientation: ${orientation}`;
+              if (orientation === 'portrait') {
+                orientationCircle.style.backgroundColor = 'blue';
+              } else if (orientation === 'landscape') {
+                orientationCircle.style.backgroundColor = 'purple';
+              } else {
+                orientationCircle.style.backgroundColor = 'gray';
+              }
+              console.log(`Orientation: ${orientation}`);
+            };
+            
+            const updateCameraFpsIndicator = (fps) => {
+              cameraFpsValue.textContent = `Camera FPS: ${fps}`;
+              if (fps >= userChosenFps) {
+                cameraFpsCircle.style.backgroundColor = 'green';
+              } else if (fps >= userChosenFps / 2) {
+                cameraFpsCircle.style.backgroundColor = 'yellow';
+              } else {
+                cameraFpsCircle.style.backgroundColor = 'red';
+              }
+              console.log(`Camera FPS updated: ${fps}`);
+            };
+            
+            const initializeVideoJS = () => {
+              if (!player) {
+                player = videojs('camera-stream', {
+                  autoplay: true,
+                  muted: true,
+                  controls: false,
+                  fluid: true
+                });
+                console.log('Video.js initialized');
+              }
+            };
+            
+            const resizeVideo = () => {
+              console.log('Window or orientation changed → resizing if needed.');
+            };
+            
+            const getCameras = async () => {
+              try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                cameras = devices.filter(d => d.kind === 'videoinput');
+                console.log(`Found ${cameras.length} camera(s).`);
+                if (cameras.length === 0) {
+                  alert('No cameras found on this device.');
+                }
+              } catch (err) {
+                console.error('Error enumerating devices:', err);
+                alert('Unable to access camera devices.');
+              }
+            };
+            
+            const displayStreamSettings = (settings) => {
+              const msg = `Current Resolution: ${settings.width}x${settings.height}, FPS: ${settings.frameRate}`;
+              Modal.show(msg, [{ label: 'OK', onClick: Modal.close }]);
+              console.log(msg);
+            };
+            
+            const startStream = async () => {
+              if (isChangingStream) return;
+              isChangingStream = true;
+              
+              try {
+                loadingIndicator.style.display = 'block';
+                updateOrientationIndicator();
+                
+                // Stop old stream
+                if (currentStream) {
+                  console.log('Stopping previous stream tracks...');
+                  currentStream.getTracks().forEach(t => t.stop());
+                }
+                
+                // Build constraints with EXACT user-chosen FPS. If it fails, we do NOT fallback.
+                const constraints = {
+                  video: {
+                    deviceId: cameras[currentCameraIndex]?.deviceId
+                      ? { exact: cameras[currentCameraIndex].deviceId }
+                      : undefined,
+                    facingMode: 'environment',
+                    width: { ideal: currentResolution.width },
+                    height: { ideal: currentResolution.height },
+                    frameRate: { ideal: userChosenFps, max: userChosenFps }
+                  }
+                };
+                
+                console.log('Requesting media with:', constraints);
+                
+                let newStream;
+                try {
+                  newStream = await navigator.mediaDevices.getUserMedia(constraints);
+                } catch (err) {
+                  // If Overconstrained => show modal, do not fallback
+                  if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
+                    console.error('Overconstrained: your device can’t do that FPS/res combo.');
+                    Modal.show(
+                      `Your device does not support ${currentResolution.width}x${currentResolution.height} @ ${userChosenFps}fps.`,
+                      [{ label: 'OK', onClick: Modal.close }]
+                    );
+                    throw err;
+                  } else {
+                    throw err;
                   }
                 }
-              ]
-            );
-          } catch (error) {
-            console.error('Error requesting camera access:', error);
-            Modal.show('Camera access is required to use this application.');
-          }
-        };
-        
-        const init = () => {
-          checkPermissions();
-        };
-        
-        return { init };
-      })();
-      
-      // Preprocessing Controls Handling
-      const PreprocessingControls = (() => {
-        const init = () => {
-          // Grayscale
-          document.getElementById('chkGrayscale').addEventListener('change', (e) => {
-            preprocessSettings.grayscale.enabled = e.target.checked;
-          });
+                
+                currentStream = newStream;
+                videoElement.srcObject = currentStream;
+                await videoElement.play();
+                
+                console.log('Stream started, video playing');
+                initializeVideoJS();
+                
+                // Actual track settings
+                const track = currentStream.getVideoTracks()[0];
+                const s = track.getSettings();
+                console.log(`Actual: ${s.width}x${s.height} @ ${s.frameRate}fps`);
+                
+                updateCameraFpsIndicator(s.frameRate);
+                displayStreamSettings(s);
+                
+                // If resolution mismatch
+                if (
+                  (s.width !== currentResolution.width && s.height !== currentResolution.height) &&
+                  (s.width !== currentResolution.height && s.height !== currentResolution.width)
+                ) {
+                  Modal.show(
+                    `Requested ${currentResolution.width}x${currentResolution.height}, got ${s.width}x${s.height} instead.`,
+                    [{ label: 'OK', onClick: Modal.close }]
+                  );
+                  console.warn(`Resolution mismatch: asked for ${currentResolution.width}x${currentResolution.height}, got ${s.width}x${s.height}`);
+                }
+                
+                // Start processing frames with OpenCV if ready
+                if (cv && cv['onRuntimeInitialized']) {
+                  await processCameraStreamWithTrackProcessor(currentStream);
+                }
+                
+              } catch (err) {
+                console.error('Error starting stream:', err);
+                if (err.name === 'NotAllowedError') {
+                  alert('Camera access was denied. Please enable it in your browser settings.');
+                } else if (err.name === 'NotFoundError') {
+                  alert('No camera device found.');
+                } else if (err.name !== 'OverconstrainedError' && err.name !== 'ConstraintNotSatisfiedError') {
+                  alert(`Error accessing camera: ${err.name}`);
+                }
+              } finally {
+                loadingIndicator.style.display = 'none';
+                isChangingStream = false;
+              }
+            };
+            
+            const switchCamera = async () => {
+              if (cameras.length < 2) {
+                Modal.show('No alternate cameras found.');
+                return;
+              }
+              
+              const camOptions = cameras.map((cam, i) => ({
+                label: cam.label || `Camera ${i + 1}`,
+                onClick: () => {
+                  currentCameraIndex = i;
+                  Modal.close();
+                  startStream();
+                  console.log(`Switched to camera index: ${i}`);
+                }
+              }));
+              
+              Modal.show('Select a camera:', camOptions);
+            };
+            
+            const switchResolution = () => {
+              const opts = resolutions.map(r => ({
+                label: r.label,
+                onClick: async () => {
+                  currentResolution = { 
+                    width: r.width,
+                    height: r.height,
+                    orientation: r.orientation,
+                    label: r.label
+                  };
+                  Modal.close();
+                  await startStream();
+                  console.log(`Switched resolution: ${r.label}`);
+                }
+              }));
+              
+              Modal.show('Select a resolution:', opts);
+            };
+            
+            const switchFps = () => {
+              const fpsOpts = [
+                {
+                  label: '30 FPS',
+                  onClick: async () => {
+                    userChosenFps = 30;
+                    Modal.close();
+                    await startStream();
+                    console.log('Switched to 30 FPS');
+                  }
+                },
+                {
+                  label: '60 FPS',
+                  onClick: async () => {
+                    userChosenFps = 60;
+                    Modal.close();
+                    await startStream();
+                    console.log('Switched to 60 FPS');
+                  }
+                }
+              ];
+              
+              Modal.show('Select FPS:', fpsOpts);
+            };
+            
+            const debounce = (func, delay = 300) => {
+              return function(...args) {
+                clearTimeout(debounceTimeout);
+                debounceTimeout = setTimeout(() => func.apply(this, args), delay);
+              };
+            };
+            
+            const handleOrientationChange = () => {
+              console.log('Orientation changed');
+              updateOrientationIndicator();
+              resizeVideo();
+            };
+            
+            // Processing Frames with OpenCV
+            const processCameraStreamWithTrackProcessor = async (stream) => {
+              if (!('MediaStreamTrackProcessor' in window)) {
+                alert('MediaStreamTrackProcessor is not supported in your browser.');
+                return;
+              }
+              
+              const track = stream.getVideoTracks()[0];
+              const processor = new MediaStreamTrackProcessor({ track });
+              const reader = processor.readable.getReader();
+              
+              while (true) {
+                const result = await reader.read();
+                if (result.done) {
+                  console.log('No more camera frames (stream ended).');
+                  break;
+                }
+                
+                const frame = result.value; // This is a VideoFrame object
+                
+                // Process frame with OpenCV
+                if (cv && cv['onRuntimeInitialized']) {
+                  processFrameWithOpenCV(frame);
+                }
+                
+                // Release the frame
+                frame.close();
+              }
+            };
+            
+            const processFrameWithOpenCV = (videoFrame) => {
+              const ctx = frameCanvas.getContext('2d');
+              
+              // Resize frameCanvas to match video frame
+              frameCanvas.width = videoFrame.displayWidth;
+              frameCanvas.height = videoFrame.displayHeight;
+              
+              // Draw the VideoFrame onto frameCanvas
+              try {
+                ctx.drawImage(videoFrame, 0, 0, frameCanvas.width, frameCanvas.height);
+              } catch (err) {
+                console.error('drawImage(VideoFrame) not supported:', err);
+                return;
+              }
+              
+              // Get image data from frameCanvas
+              const imageData = ctx.getImageData(0, 0, frameCanvas.width, frameCanvas.height);
+              
+              // Convert to OpenCV Mat
+              let srcMat = cv.matFromImageData(imageData);
+              
+              // Apply Preprocessing Effects
+              // (A) Grayscale
+              if (preprocessSettings.grayscale.enabled) {
+                cv.cvtColor(srcMat, srcMat, cv.COLOR_RGBA2GRAY, 0);
+                cv.cvtColor(srcMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
+              }
+              
+              // (B) Threshold
+              if (preprocessSettings.threshold.enabled) {
+                let tVal = (preprocessSettings.threshold.value / 100) * 255;
+                cv.threshold(srcMat, srcMat, tVal, 255, cv.THRESH_BINARY);
+              }
+              
+              // (C) Edge Detection
+              if (preprocessSettings.edges.enabled) {
+                let eVal = preprocessSettings.edges.value;
+                let t1 = eVal * 2.5; 
+                let t2 = t1 * 1.5;
+                let edgeMat = new cv.Mat();
+                cv.Canny(srcMat, edgeMat, t1, t2);
+                cv.cvtColor(edgeMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
+                edgeMat.delete();
+              }
+              
+              // (D) Highlights
+              if (preprocessSettings.highlights.enabled) {
+                let kernelSize = Math.max(1, Math.floor(preprocessSettings.highlights.value / 10));
+                let kernel = cv.Mat.ones(kernelSize, kernelSize, cv.CV_8U);
+                let highlightMat = new cv.Mat();
+                cv.dilate(srcMat, highlightMat, kernel); // Example effect
+                highlightMat.copyTo(srcMat);
+                kernel.delete();
+                highlightMat.delete();
+              }
+              
+              // (E) Brightness
+              if (preprocessSettings.brightness.enabled) {
+                let bVal = parseInt(preprocessSettings.brightness.value, 10);
+                let alpha = (bVal - 50); // range -50..+50
+                cv.convertScaleAbs(srcMat, srcMat, 1, alpha);
+              }
+              
+              // Convert processed Mat back to ImageData
+              const processedData = new ImageData(
+                new Uint8ClampedArray(srcMat.data),
+                srcMat.cols,
+                srcMat.rows
+              );
+              
+              // Draw on overlay canvas
+              const overlayCtx = overlayCanvas.getContext('2d');
+              overlayCanvas.width = srcMat.cols;
+              overlayCanvas.height = srcMat.rows;
+              overlayCtx.putImageData(processedData, 0, 0);
+              
+              // Cleanup
+              srcMat.delete();
+            };
+            
+            const init = async () => {
+              await getCameras();
+              await startStream();
+              
+              window.addEventListener('resize', resizeVideo);
+              window.addEventListener('orientationchange', handleOrientationChange);
+              
+              navigator.mediaDevices.addEventListener('devicechange', async () => {
+                await getCameras();
+                console.log('Device change detected');
+              });
+            };
+            
+            return { init, switchCamera, switchResolution, switchFps, processFrameWithOpenCV };
+          })();
           
-          // Threshold
-          const sliderThreshold = document.getElementById('sliderThreshold');
-          const valThreshold = document.getElementById('valThreshold');
-          sliderThreshold.addEventListener('input', (e) => {
-            const val = parseInt(e.target.value, 10);
-            valThreshold.textContent = val;
-            preprocessSettings.threshold.value = val;
-          });
-          document.getElementById('chkThreshold').addEventListener('change', (e) => {
-            preprocessSettings.threshold.enabled = e.target.checked;
-          });
+          // Permissions Module
+          const Permissions = (() => {
+            const checkPermissions = async () => {
+              try {
+                const status = await navigator.permissions.query({ name: 'camera' });
+                handlePermissionState(status.state);
+                
+                status.onchange = () => {
+                  handlePermissionState(status.state);
+                };
+              } catch (err) {
+                console.error('Error checking camera perms:', err);
+                Modal.show('An error occurred while accessing camera permissions.');
+              }
+            };
+            
+            const handlePermissionState = (st) => {
+              switch(st) {
+                case 'denied':
+                  Modal.show('Camera access denied. Enable it in your browser settings.');
+                  break;
+                case 'prompt':
+                  requestCameraAccess();
+                  break;
+                case 'granted':
+                  CameraStream.init();
+                  break;
+                default:
+                  break;
+              }
+            };
+            
+            const requestCameraAccess = async () => {
+              try {
+                await navigator.mediaDevices.getUserMedia({ video: true });
+                Modal.show(
+                  'Camera access granted. The page will refresh to start the camera stream.',
+                  [
+                    {
+                      label: 'Continue',
+                      onClick: () => {
+                        Modal.close();
+                        location.reload();
+                      }
+                    }
+                  ]
+                );
+              } catch (error) {
+                console.error('Error requesting camera access:', error);
+                Modal.show('Camera access is required to use this application.');
+              }
+            };
+            
+            const init = () => {
+              checkPermissions();
+            };
+            
+            return { init };
+          })();
           
-          // Edge Detection
-          const sliderEdges = document.getElementById('sliderEdges');
-          const valEdges = document.getElementById('valEdges');
-          sliderEdges.addEventListener('input', (e) => {
-            const val = parseInt(e.target.value, 10);
-            valEdges.textContent = val;
-            preprocessSettings.edges.value = val;
-          });
-          document.getElementById('chkEdges').addEventListener('change', (e) => {
-            preprocessSettings.edges.enabled = e.target.checked;
-          });
-          
-          // Highlights
-          const sliderHighlights = document.getElementById('sliderHighlights');
-          const valHighlights = document.getElementById('valHighlights');
-          sliderHighlights.addEventListener('input', (e) => {
-            const val = parseInt(e.target.value, 10);
-            valHighlights.textContent = val;
-            preprocessSettings.highlights.value = val;
-          });
-          document.getElementById('chkHighlights').addEventListener('change', (e) => {
-            preprocessSettings.highlights.enabled = e.target.checked;
-          });
-          
-          // Brightness
-          const sliderBrightness = document.getElementById('sliderBrightness');
-          const valBrightness = document.getElementById('valBrightness');
-          sliderBrightness.addEventListener('input', (e) => {
-            const val = parseInt(e.target.value, 10);
-            valBrightness.textContent = val;
-            preprocessSettings.brightness.value = val;
-          });
-          document.getElementById('chkBrightness').addEventListener('change', (e) => {
-            preprocessSettings.brightness.enabled = e.target.checked;
-          });
+          // Preprocessing Controls Handling
+          const PreprocessingControls = (() => {
+            const init = () => {
+              // Grayscale
+              document.getElementById('chkGrayscale').addEventListener('change', (e) => {
+                window.Main.preprocessSettings.grayscale.enabled = e.target.checked;
+              });
+              
+              // Threshold
+              const sliderThreshold = document.getElementById('sliderThreshold');
+              const valThreshold = document.getElementById('valThreshold');
+              sliderThreshold.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                valThreshold.textContent = val;
+                window.Main.preprocessSettings.threshold.value = val;
+              });
+              document.getElementById('chkThreshold').addEventListener('change', (e) => {
+                window.Main.preprocessSettings.threshold.enabled = e.target.checked;
+              });
+              
+              // Edge Detection
+              const sliderEdges = document.getElementById('sliderEdges');
+              const valEdges = document.getElementById('valEdges');
+              sliderEdges.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                valEdges.textContent = val;
+                window.Main.preprocessSettings.edges.value = val;
+              });
+              document.getElementById('chkEdges').addEventListener('change', (e) => {
+                window.Main.preprocessSettings.edges.enabled = e.target.checked;
+              });
+              
+              // Highlights
+              const sliderHighlights = document.getElementById('sliderHighlights');
+              const valHighlights = document.getElementById('valHighlights');
+              sliderHighlights.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                valHighlights.textContent = val;
+                window.Main.preprocessSettings.highlights.value = val;
+              });
+              document.getElementById('chkHighlights').addEventListener('change', (e) => {
+                window.Main.preprocessSettings.highlights.enabled = e.target.checked;
+              });
+              
+              // Brightness
+              const sliderBrightness = document.getElementById('sliderBrightness');
+              const valBrightness = document.getElementById('valBrightness');
+              sliderBrightness.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                valBrightness.textContent = val;
+                window.Main.preprocessSettings.brightness.value = val;
+              });
+              document.getElementById('chkBrightness').addEventListener('change', (e) => {
+                window.Main.preprocessSettings.brightness.enabled = e.target.checked;
+              });
 
-          // Thread Selection
-          const threadSelection = document.getElementById('thread-selection');
-          threadSelection.addEventListener('change', (e) => {
-            preprocessSettings.threads = parseInt(e.target.value, 10);
-            console.log(`Selected ${preprocessSettings.threads} thread(s) for preprocessing.`);
+              // Thread Selection
+              const threadSelection = document.getElementById('thread-selection');
+              threadSelection.addEventListener('change', (e) => {
+                window.Main.preprocessSettings.threads = parseInt(e.target.value, 10);
+                console.log(`Selected ${window.Main.preprocessSettings.threads} thread(s) for preprocessing.`);
+              });
+            };
+            
+            return { init };
+          })();
+          
+          // Initialize Everything
+          document.addEventListener('DOMContentLoaded', () => {
+            FPSCounter.start();               // Start the rendering FPS loop
+            Permissions.init();               // Check camera permissions, then init camera if granted
+            PreprocessingControls.init();     // Initialize preprocessing controls
+            
+            // Hook up controls
+            document.getElementById('change-camera').addEventListener('click', CameraStream.switchCamera);
+            document.getElementById('change-resolution').addEventListener('click', debounce(CameraStream.switchResolution));
+            document.getElementById('change-fps').addEventListener('click', debounce(CameraStream.switchFps));
+            document.getElementById('preprocessing-button').addEventListener('click', () => {
+              PreprocessingModal.show();
+            });
           });
-        };
-        
-        return { init };
-      })();
+          
+          function debounce(func, delay = 300) {
+            let timeout;
+            return function(...args) {
+              clearTimeout(timeout);
+              timeout = setTimeout(() => func.apply(this, args), delay);
+            };
+          }
+          
+          // Expose preprocessSettings to Main
+          window.Main = window.Main || {};
+          window.Main.preprocessSettings = {
+            grayscale: { enabled: false, value: 100 },
+            threshold: { enabled: false, value: 50 },
+            edges: { enabled: false, value: 50 },
+            highlights: { enabled: false, value: 50 },
+            brightness: { enabled: false, value: 50 },
+            threads: 1
+          };
+        })();
+      </script>
       
-      // Initialize Everything
-      document.addEventListener('DOMContentLoaded', () => {
-        FPSCounter.start();         // Start the rendering FPS loop
-        Permissions.init();         // Check camera perms, then init camera if granted
-        PreprocessingControls.init(); // Initialize preprocessing controls
-        
-        // Hook up controls
-        document.getElementById('change-camera').addEventListener('click', CameraStream.switchCamera);
-        document.getElementById('change-resolution').addEventListener('click', debounce(CameraStream.switchResolution));
-        document.getElementById('change-fps').addEventListener('click', debounce(CameraStream.switchFps));
-        document.getElementById('preprocessing-button').addEventListener('click', () => {
-          PreprocessingModal.show();
-        });
-      });
-      
-      function debounce(func, delay = 300) {
-        let timeout;
-        return function(...args) {
-          clearTimeout(timeout);
-          timeout = setTimeout(() => func.apply(this, args), delay);
-        };
-      }
-      
-    })();
-  </script>
-  
 </body>
 </html>

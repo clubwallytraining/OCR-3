@@ -15,15 +15,6 @@
     rel="stylesheet"
   >
   
-  <!-- OpenCV.js locally -->
-  <script src="./opencv.js" defer></script>
-  
-  <!-- Video.js Library (no integrity checks) -->
-  <script
-    src="https://vjs.zencdn.net/8.0.4/video.min.js"
-    defer
-  ></script>
-  
   <!-- Dark Theme Styling -->
   <style>
     :root {
@@ -269,16 +260,6 @@
       background-color: var(--button-hover-bg);
     }
 
-    /* OpenCV Indicator */
-    #opencv-indicator {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      z-index: 4;
-      font-size: 14px;
-      font-weight: bold;
-    }
-
     /* Preprocessing Modal Styles */
     .preprocessing-option {
       display: flex;
@@ -340,8 +321,121 @@
       }
     }
   </style>
+</head>
+<body>
+  
+  <!-- Loading Indicator -->
+  <div id="loading-indicator">Initializing camera...</div>
+  
+  <!-- OpenCV Indicator -->
+  <div id="opencv-indicator" style="color: red;">OpenCV: Loading...</div>
+  
+  <!-- Browser Rendering FPS Counter -->
+  <div id="fps-counter">
+    <div class="fps-indicator" id="fps-indicator"></div>
+    <span id="fps-value">FPS: --</span>
+  </div>
+  
+  <!-- Orientation Indicator -->
+  <div id="orientation-indicator">
+    <div class="orientation-indicator-circle" id="orientation-circle"></div>
+    <span id="orientation-value">Orientation: --</span>
+  </div>
+
+  <!-- Camera FPS Indicator -->
+  <div id="camera-fps-indicator">
+    <div class="camera-fps-indicator-circle" id="camera-fps-circle"></div>
+    <span id="camera-fps-value">Camera FPS: --</span>
+  </div>
+  
+  <!-- Video Stream -->
+  <video
+    id="camera-stream"
+    class="video-js vjs-default-skin"
+    autoplay
+    muted
+    playsinline
+    webkit-playsinline
+  ></video>
+  
+  <!-- Overlay Canvas for Processed Frames -->
+  <canvas id="overlayCanvas" width="640" height="480"></canvas>
+  
+  <!-- Hidden Frame Canvas -->
+  <canvas id="frameCanvas" width="640" height="480" style="display:none;"></canvas>
+  
+  <!-- Controls -->
+  <div class="controls">
+    <button class="control-button" id="change-camera" aria-label="Change Camera">Change Camera</button>
+    <button class="control-button" id="change-resolution" aria-label="Change Resolution">Change Resolution</button>
+    <button class="control-button" id="change-fps" aria-label="Change FPS">Change FPS</button>
+    <button class="control-button" id="preprocessing-button" aria-label="Preprocessing Controls">Preprocessing</button>
+  </div>
+  
+  <!-- Modal -->
+  <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-content">
+      <span class="close-button" id="modal-close" aria-label="Close Modal">&times;</span>
+      <div class="modal-message" id="modal-message">Modal Message</div>
+      <div class="modal-options" id="modal-options"></div>
+    </div>
+  </div>
+  
+  <!-- Preprocessing Modal -->
+  <div id="preprocessing-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="preprocessing-modal-title">
+    <div class="modal-content">
+      <span class="close-button" id="preprocessing-modal-close" aria-label="Close Preprocessing Modal">&times;</span>
+      <div class="modal-message" id="preprocessing-modal-message">Preprocessing Controls</div>
+      <div class="preprocessing-options" id="preprocessing-options">
+        <!-- Grayscale -->
+        <div class="preprocessing-option">
+          <label for="chkGrayscale">Grayscale</label>
+          <input type="checkbox" id="chkGrayscale">
+        </div>
+        <!-- Threshold -->
+        <div class="preprocessing-option">
+          <label for="chkThreshold">Threshold</label>
+          <input type="checkbox" id="chkThreshold">
+          <input type="range" id="sliderThreshold" min="0" max="100" value="50">
+          <span id="valThreshold">50</span>
+        </div>
+        <!-- Edge Detection -->
+        <div class="preprocessing-option">
+          <label for="chkEdges">Edge Detection</label>
+          <input type="checkbox" id="chkEdges">
+          <input type="range" id="sliderEdges" min="0" max="100" value="50">
+          <span id="valEdges">50</span>
+        </div>
+        <!-- Highlights -->
+        <div class="preprocessing-option">
+          <label for="chkHighlights">Highlights</label>
+          <input type="checkbox" id="chkHighlights">
+          <input type="range" id="sliderHighlights" min="0" max="100" value="50">
+          <span id="valHighlights">50</span>
+        </div>
+        <!-- Brightness -->
+        <div class="preprocessing-option">
+          <label for="chkBrightness">Brightness</label>
+          <input type="checkbox" id="chkBrightness">
+          <input type="range" id="sliderBrightness" min="0" max="100" value="50">
+          <span id="valBrightness">50</span>
+        </div>
+        <!-- Workers -->
+        <div class="preprocessing-option">
+          <label for="workerSelect">Web Workers</label>
+          <select id="workerSelect">
+            <option value="1">1 Worker</option>
+            <option value="2">2 Workers</option>
+            <option value="4">4 Workers</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
   
   <!-- JavaScript -->
+  <script src="./opencv.js" defer></script> <!-- Ensure opencv.js is in the same directory -->
+  <script src="https://vjs.zencdn.net/8.0.4/video.min.js" defer></script>
   <script>
     (function() {
       // Global Flags
@@ -1136,189 +1230,6 @@
           }
         };
 
-        const processFrameWithOpenCV = (videoFrame) => {
-          // Draw the VideoFrame onto frameCanvas
-          frameCanvas.width = videoFrame.displayWidth;
-          frameCanvas.height = videoFrame.displayHeight;
-          
-          try {
-            frameCtx.drawImage(videoFrame, 0, 0, frameCanvas.width, frameCanvas.height);
-          } catch (err) {
-            console.error('drawImage(VideoFrame) not supported:', err);
-            return;
-          }
-
-          // Get image data
-          const imageData = frameCtx.getImageData(0, 0, frameCanvas.width, frameCanvas.height);
-
-          // Enqueue frame for processing
-          if (activeWorkers < workers.length) {
-            workers[activeWorkers].postMessage({ imageData, settings: preprocessSettings });
-            activeWorkers++;
-          } else {
-            workerQueue.push({ imageData, settings: preprocessSettings });
-          }
-
-          // Update camera FPS
-          const now = performance.now();
-          frameRate = 1000 / (now - lastCameraFrameTime);
-          lastCameraFrameTime = now;
-          updateCameraFpsIndicator(Math.round(frameRate));
-        };
-
-        const processFrameWithCanvasFallback = () => {
-          overlayCtx.drawImage(videoElement, 0, 0, overlayCanvas.width, overlayCanvas.height);
-          // Update camera FPS
-          const now = performance.now();
-          frameRate = 1000 / (now - lastCameraFrameTime);
-          lastCameraFrameTime = now;
-          updateCameraFpsIndicator(Math.round(frameRate));
-          requestAnimationFrame(processFrameWithCanvasFallback);
-        };
-
-        const setupTrackProcessor = (track) => {
-          if (typeof MediaStreamTrackProcessor === 'undefined') {
-            console.warn('MediaStreamTrackProcessor is not supported. Falling back to canvas processing.');
-            processFrameWithCanvasFallback();
-            return;
-          }
-
-          try {
-            processor = new MediaStreamTrackProcessor({ track });
-            reader = processor.readable.getReader();
-            console.log('MediaStreamTrackProcessor initialized');
-            processFrames();
-          } catch (err) {
-            console.error('Error setting up MediaStreamTrackProcessor:', err);
-            processFrameWithCanvasFallback();
-          }
-        };
-
-        const processFrames = async () => {
-          while (true) {
-            try {
-              const result = await reader.read();
-              if (result.done) {
-                console.log('No more camera frames (stream ended).');
-                break;
-              }
-
-              const frame = result.value; // VideoFrame object
-
-              if (opencvReady) {
-                processFrameWithOpenCV(frame);
-              } else {
-                console.log('OpenCV not ready yet.');
-              }
-
-              // Release the frame
-              frame.close();
-            } catch (err) {
-              console.error('Error reading frames:', err);
-              break;
-            }
-          }
-        };
-
-        const startFrameProcessing = () => {
-          if (!currentStream) {
-            console.warn('No camera stream available.');
-            return;
-          }
-
-          const track = currentStream.getVideoTracks()[0];
-          setupTrackProcessor(track);
-        };
-
-        const debounce = (func, delay = 300) => {
-          let timeout;
-          return function(...args) {
-            clearTimeout(timeout);
-            timeout = setTimeout(() => func.apply(this, args), delay);
-          };
-        };
-
-        const setupWorkers = () => {
-          // Terminate existing workers
-          workers.forEach(worker => worker.terminate());
-          workers = [];
-
-          // Create new workers based on user selection
-          for (let i = 0; i < preprocessSettings.workers; i++) {
-            const worker = new Worker(URL.createObjectURL(new Blob([`
-              importScripts('./opencv.js');
-
-              let opencvReady = false;
-              cv['onRuntimeInitialized'] = () => {
-                opencvReady = true;
-              };
-
-              self.onmessage = function(e) {
-                if (!opencvReady) return;
-                const { imageData, settings } = e.data;
-                const processedData = processFrame(imageData, settings);
-                self.postMessage({ processedData });
-              };
-
-              function processFrame(imageData, settings) {
-                const srcMat = cv.matFromImageData(imageData);
-                // Grayscale
-                if (settings.grayscale.enabled) {
-                  cv.cvtColor(srcMat, srcMat, cv.COLOR_RGBA2GRAY, 0);
-                  cv.cvtColor(srcMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
-                }
-                // Threshold
-                if (settings.threshold.enabled) {
-                  let tVal = (settings.threshold.value / 100) * 255;
-                  cv.threshold(srcMat, srcMat, tVal, 255, cv.THRESH_BINARY);
-                }
-                // Edge Detection
-                if (settings.edges.enabled) {
-                  let eVal = settings.edges.value;
-                  let t1 = eVal * 2.5; 
-                  let t2 = t1 * 1.5;
-                  let edgeMat = new cv.Mat();
-                  cv.Canny(srcMat, edgeMat, t1, t2);
-                  cv.cvtColor(edgeMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
-                  edgeMat.delete();
-                }
-                // Highlights
-                if (settings.highlights.enabled) {
-                  let kernelSize = Math.max(1, Math.floor(settings.highlights.value / 10));
-                  let kernel = cv.Mat.ones(kernelSize, kernelSize, cv.CV_8U);
-                  let highlightMat = new cv.Mat();
-                  cv.dilate(srcMat, highlightMat, kernel);
-                  highlightMat.copyTo(srcMat);
-                  kernel.delete();
-                  highlightMat.delete();
-                }
-                // Brightness
-                if (settings.brightness.enabled) {
-                  let bVal = parseInt(settings.brightness.value, 10);
-                  let alpha = (bVal - 50);
-                  cv.convertScaleAbs(srcMat, srcMat, 1, alpha);
-                }
-
-                const processed = new ImageData(new Uint8ClampedArray(srcMat.data), srcMat.cols, srcMat.rows);
-                srcMat.delete();
-                return processed;
-              }
-            `], { type: 'application/javascript' })));
-            
-            worker.onmessage = function(e) {
-              const { processedData } = e.data;
-              overlayCtx.putImageData(processedData, 0, 0);
-              activeWorkers--;
-              if (workerQueue.length > 0) {
-                const nextFrame = workerQueue.shift();
-                worker.postMessage(nextFrame);
-                activeWorkers++;
-              }
-            };
-            workers.push(worker);
-          }
-        };
-
         const init = async () => {
           await getCameras();
           await initializeCameraStream();
@@ -1411,117 +1322,6 @@
       
     })();
   </script>
-</head>
-<body>
-  
-  <!-- Loading Indicator -->
-  <div id="loading-indicator">Initializing camera...</div>
-  
-  <!-- OpenCV Indicator -->
-  <div id="opencv-indicator" style="color: red;">OpenCV: Loading...</div>
-  
-  <!-- Browser Rendering FPS Counter -->
-  <div id="fps-counter">
-    <div class="fps-indicator" id="fps-indicator"></div>
-    <span id="fps-value">FPS: --</span>
-  </div>
-  
-  <!-- Orientation Indicator -->
-  <div id="orientation-indicator">
-    <div class="orientation-indicator-circle" id="orientation-circle"></div>
-    <span id="orientation-value">Orientation: --</span>
-  </div>
-
-  <!-- Camera FPS Indicator -->
-  <div id="camera-fps-indicator">
-    <div class="camera-fps-indicator-circle" id="camera-fps-circle"></div>
-    <span id="camera-fps-value">Camera FPS: --</span>
-  </div>
-  
-  <!-- Video Stream -->
-  <video
-    id="camera-stream"
-    class="video-js vjs-default-skin"
-    autoplay
-    muted
-    playsinline
-    webkit-playsinline
-  ></video>
-  
-  <!-- Overlay Canvas for Processed Frames -->
-  <canvas id="overlayCanvas" width="640" height="480"></canvas>
-  
-  <!-- Hidden Frame Canvas -->
-  <canvas id="frameCanvas" width="640" height="480" style="display:none;"></canvas>
-  
-  <!-- Controls -->
-  <div class="controls">
-    <button class="control-button" id="change-camera" aria-label="Change Camera">Change Camera</button>
-    <button class="control-button" id="change-resolution" aria-label="Change Resolution">Change Resolution</button>
-    <button class="control-button" id="change-fps" aria-label="Change FPS">Change FPS</button>
-    <button class="control-button" id="preprocessing-button" aria-label="Preprocessing Controls">Preprocessing</button>
-  </div>
-  
-  <!-- Modal -->
-  <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-    <div class="modal-content">
-      <span class="close-button" id="modal-close" aria-label="Close Modal">&times;</span>
-      <div class="modal-message" id="modal-message">Modal Message</div>
-      <div class="modal-options" id="modal-options"></div>
-    </div>
-  </div>
-  
-  <!-- Preprocessing Modal -->
-  <div id="preprocessing-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="preprocessing-modal-title">
-    <div class="modal-content">
-      <span class="close-button" id="preprocessing-modal-close" aria-label="Close Preprocessing Modal">&times;</span>
-      <div class="modal-message" id="preprocessing-modal-message">Preprocessing Controls</div>
-      <div class="preprocessing-options" id="preprocessing-options">
-        <!-- Grayscale -->
-        <div class="preprocessing-option">
-          <label for="chkGrayscale">Grayscale</label>
-          <input type="checkbox" id="chkGrayscale">
-        </div>
-        <!-- Threshold -->
-        <div class="preprocessing-option">
-          <label for="chkThreshold">Threshold</label>
-          <input type="checkbox" id="chkThreshold">
-          <input type="range" id="sliderThreshold" min="0" max="100" value="50">
-          <span id="valThreshold">50</span>
-        </div>
-        <!-- Edge Detection -->
-        <div class="preprocessing-option">
-          <label for="chkEdges">Edge Detection</label>
-          <input type="checkbox" id="chkEdges">
-          <input type="range" id="sliderEdges" min="0" max="100" value="50">
-          <span id="valEdges">50</span>
-        </div>
-        <!-- Highlights -->
-        <div class="preprocessing-option">
-          <label for="chkHighlights">Highlights</label>
-          <input type="checkbox" id="chkHighlights">
-          <input type="range" id="sliderHighlights" min="0" max="100" value="50">
-          <span id="valHighlights">50</span>
-        </div>
-        <!-- Brightness -->
-        <div class="preprocessing-option">
-          <label for="chkBrightness">Brightness</label>
-          <input type="checkbox" id="chkBrightness">
-          <input type="range" id="sliderBrightness" min="0" max="100" value="50">
-          <span id="valBrightness">50</span>
-        </div>
-        <!-- Workers -->
-        <div class="preprocessing-option">
-          <label for="workerSelect">Web Workers</label>
-          <select id="workerSelect">
-            <option value="1">1 Worker</option>
-            <option value="2">2 Workers</option>
-            <option value="4">4 Workers</option>
-          </select>
-        </div>
-      </div>
-    </div>
-  </div>
   
 </body>
 </html>

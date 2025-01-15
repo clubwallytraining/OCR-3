@@ -2,19 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <!-- 
-    By using maximum-scale=1.0 and user-scalable=no, we ensure orientation-based resizing 
-    behaves consistently on mobile devices.
-  -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Fullscreen Camera Stream with OpenCV Processing</title>
   
-  <!-- Video.js CSS (no integrity checks) -->
-  <link
-    href="https://vjs.zencdn.net/8.0.4/video-js.css"
-    rel="stylesheet"
-  >
-  
+  <!-- Video.js CSS -->
+  <link href="https://vjs.zencdn.net/8.0.4/video-js.css" rel="stylesheet">
+
   <!-- Dark Theme Styling -->
   <style>
     :root {
@@ -324,11 +317,8 @@
     }
   </style>
   
-  <!-- Video.js Library (no integrity checks) -->
-  <script
-    src="https://vjs.zencdn.net/8.0.4/video.min.js"
-    defer
-  ></script>
+  <!-- Video.js Library -->
+  <script src="https://vjs.zencdn.net/8.0.4/video.min.js" defer></script>
 </head>
 <body>
   
@@ -695,7 +685,7 @@
                 currentStream.getTracks().forEach(t => t.stop());
               }
               
-              // Build constraints with EXACT user-chosen FPS. If it fails, we do NOT fallback.
+              // Build constraints with user-chosen FPS
               const constraints = {
                 video: {
                   deviceId: cameras[currentCameraIndex]?.deviceId
@@ -1024,10 +1014,31 @@
             return { show, close };
           })();
           
-          const CameraStream = window.Main.initializeCameraStream = async function() {
-            // Placeholder for initialization if needed
+          const hookUpControls = () => {
+            // Hook up controls
+            document.getElementById('change-camera').addEventListener('click', window.Main.switchCamera.bind(window.Main));
+            document.getElementById('change-resolution').addEventListener('click', debounce(window.Main.switchResolution.bind(window.Main)));
+            document.getElementById('change-fps').addEventListener('click', debounce(window.Main.switchFps.bind(window.Main)));
+            document.getElementById('preprocessing-button').addEventListener('click', () => {
+              PreprocessingModal.show();
+            });
           };
           
+          const debounce = (func, delay = 300) => {
+            let timeout;
+            return function(...args) {
+              clearTimeout(timeout);
+              timeout = setTimeout(() => func.apply(this, args), delay);
+            };
+          };
+          
+          // Initialize Everything
+          document.addEventListener('DOMContentLoaded', () => {
+            PreprocessingControls.init();     // Initialize preprocessing controls
+            Permissions.init();               // Check camera permissions, then load OpenCV if granted
+            hookUpControls();                 // Hook up controls
+          });
+
           const Permissions = (() => {
             const checkPermissions = async () => {
               try {
@@ -1110,7 +1121,7 @@
             
             return { init };
           })();
-          
+
           const PreprocessingControls = (() => {
             const init = () => {
               // Grayscale
@@ -1176,31 +1187,6 @@
             
             return { init };
           })();
-          
-          const hookUpControls = () => {
-            // Hook up controls
-            document.getElementById('change-camera').addEventListener('click', window.Main.switchCamera.bind(window.Main));
-            document.getElementById('change-resolution').addEventListener('click', debounce(window.Main.switchResolution.bind(window.Main)));
-            document.getElementById('change-fps').addEventListener('click', debounce(window.Main.switchFps.bind(window.Main)));
-            document.getElementById('preprocessing-button').addEventListener('click', () => {
-              PreprocessingModal.show();
-            });
-          };
-          
-          const debounce = (func, delay = 300) => {
-            let timeout;
-            return function(...args) {
-              clearTimeout(timeout);
-              timeout = setTimeout(() => func.apply(this, args), delay);
-            };
-          };
-          
-          // Initialize Everything
-          document.addEventListener('DOMContentLoaded', () => {
-            PreprocessingControls.init();     // Initialize preprocessing controls
-            Permissions.init();               // Check camera permissions, then load OpenCV if granted
-            hookUpControls();                 // Hook up controls
-          });
           
         })();
       </script>

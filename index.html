@@ -7,7 +7,7 @@
     behaves consistently on mobile devices.
   -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Fullscreen Camera Stream (No Fallback)</title>
+  <title>Fullscreen Camera Stream with OpenCV Processing</title>
   
   <!-- Video.js CSS (no integrity checks) -->
   <link
@@ -63,6 +63,16 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
+    }
+
+    /* Overlay Canvas */
+    #overlayCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
     }
 
     /* Controls styling */
@@ -252,55 +262,28 @@
     .modal-option:hover {
       background-color: var(--button-hover-bg);
     }
-
-    /* Preprocessing Modal Additions */
-    #preprocessing-modal h2 {
-      margin-top: 0;
-      margin-bottom: 1.2em;
-    }
+    
+    /* Preprocessing Modal Specific Styles */
     #preprocessing-options label {
-      width: 100%;
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      color: #ccc;
-      font-size: 14px;
       gap: 10px;
+      width: 100%;
+      max-width: 300px;
+      flex-wrap: wrap;
     }
-    #preprocessing-options label input[type="checkbox"] {
-      margin-right: 10px;
-    }
+
     #preprocessing-options input[type="range"] {
       flex: 1;
-      margin: 0 10px;
-    }
-    #preprocessing-options span {
-      min-width: 30px;
-      text-align: right;
-    }
-    #preprocessing-worker-choices {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 5px;
-      margin-top: 15px;
-      margin-bottom: 10px;
-      padding: 10px;
-      border: 1px solid #555;
-      border-radius: 5px;
-    }
-    #preprocessing-worker-choices label {
-      justify-content: flex-start;
     }
 
-    /* Overlay Canvas */
-    #overlayCanvas {
-      pointer-events: none; /* So clicks pass through to video if needed */
-    }
-
-    /* Hidden canvas for raw frames */
-    #frameCanvas {
-      display: none;
+    /* OpenCV Status Indicator */
+    #opencv-status {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 2;
+      font-weight: bold;
     }
 
     /* Responsive adjustments */
@@ -352,6 +335,9 @@
   <!-- Loading Indicator -->
   <div id="loading-indicator">Initializing camera...</div>
   
+  <!-- OpenCV Status Indicator -->
+  <div id="opencv-status" style="color: red;">OpenCV</div>
+  
   <!-- Browser Rendering FPS Counter -->
   <div id="fps-counter">
     <div class="fps-indicator" id="fps-indicator"></div>
@@ -370,20 +356,7 @@
     <span id="camera-fps-value">Camera FPS: --</span>
   </div>
   
-  <!-- A small OpenCV loading indicator (red while loading, green once loaded) -->
-  <div id="opencv-indicator" style="
-    position: fixed;
-    top: 60px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: red;
-    font-weight: bold;
-    z-index: 999;
-  ">
-    openCV
-  </div>
-
-  <!-- Video Stream (we keep it for background or preview) -->
+  <!-- Video Stream -->
   <video
     id="camera-stream"
     class="video-js vjs-default-skin"
@@ -392,14 +365,12 @@
     playsinline
     webkit-playsinline
   ></video>
-
-  <!-- Canvas for processed frames overlay -->
-  <canvas id="overlayCanvas" width="640" height="480"
-    style="position:absolute; top:0; left:0; z-index:1;">
-  </canvas>
-
-  <!-- Hidden canvas to hold raw frames from track processor -->
-  <canvas id="frameCanvas" width="640" height="480"></canvas>
+  
+  <!-- Overlay Canvas -->
+  <canvas id="overlayCanvas"></canvas>
+  
+  <!-- Hidden Frame Canvas -->
+  <canvas id="frameCanvas" width="640" height="480" style="display:none;"></canvas>
   
   <!-- Controls -->
   <div class="controls">
@@ -409,7 +380,7 @@
     <button class="control-button" id="preprocessing-button" aria-label="Preprocessing Controls">Preprocessing</button>
   </div>
   
-  <!-- Modal (original) -->
+  <!-- Modal -->
   <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-content">
       <span class="close-button" id="modal-close" aria-label="Close Modal">&times;</span>
@@ -419,99 +390,86 @@
       </div>
     </div>
   </div>
-
-  <!-- Modal for Preprocessing (new) -->
+  
+  <!-- Preprocessing Modal -->
   <div id="preprocessing-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="preprocessing-modal-title">
     <div class="modal-content">
-      <span class="close-button" id="preprocessing-modal-close" aria-label="Close Modal">&times;</span>
+      <span class="close-button" id="preprocessing-modal-close" aria-label="Close Preprocessing Modal">&times;</span>
       <h2 id="preprocessing-modal-title">Preprocessing Controls</h2>
       
       <div class="modal-options" id="preprocessing-options">
-        
         <!-- Grayscale -->
         <label>
           <input type="checkbox" id="chkGrayscale" />
-          <span>Grayscale</span>
+          Grayscale
         </label>
         
         <!-- Threshold -->
         <label>
           <input type="checkbox" id="chkThreshold" />
-          <span>
-            Threshold 
-            <input type="range" id="sliderThreshold" min="0" max="100" value="50" />
-            <span id="valThreshold">50</span>
-          </span>
+          Threshold 
+          <input type="range" id="sliderThreshold" min="0" max="100" value="50" />
+          <span id="valThreshold">50</span>
         </label>
         
         <!-- Edge Detection (Canny) -->
         <label>
           <input type="checkbox" id="chkEdges" />
-          <span>
-            Edge Detection 
-            <input type="range" id="sliderEdges" min="0" max="100" value="50" />
-            <span id="valEdges">50</span>
-          </span>
+          Edge Detection 
+          <input type="range" id="sliderEdges" min="0" max="100" value="50" />
+          <span id="valEdges">50</span>
         </label>
         
         <!-- Highlights -->
         <label>
           <input type="checkbox" id="chkHighlights" />
-          <span>
-            Highlights 
-            <input type="range" id="sliderHighlights" min="0" max="100" value="50" />
-            <span id="valHighlights">50</span>
-          </span>
+          Highlights 
+          <input type="range" id="sliderHighlights" min="0" max="100" value="50" />
+          <span id="valHighlights">50</span>
         </label>
         
         <!-- Brightness -->
         <label>
           <input type="checkbox" id="chkBrightness" />
-          <span>
-            Brightness 
-            <input type="range" id="sliderBrightness" min="0" max="100" value="50" />
-            <span id="valBrightness">50</span>
-          </span>
+          Brightness 
+          <input type="range" id="sliderBrightness" min="0" max="100" value="50" />
+          <span id="valBrightness">50</span>
         </label>
 
-        <!-- Worker Count -->
-        <div id="preprocessing-worker-choices">
-          <label><input type="radio" name="workerCount" value="1" checked /> Use 1 Web Worker</label>
-          <label><input type="radio" name="workerCount" value="2" /> Use 2 Web Workers</label>
-          <label><input type="radio" name="workerCount" value="4" /> Use 4 Web Workers</label>
-        </div>
-
+        <!-- Thread Selection -->
+        <label>
+          Threads: 
+          <select id="thread-selection">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="4">4</option>
+          </select>
+        </label>
       </div>
     </div>
   </div>
   
   <!-- JavaScript -->
   <script>
-    /* ---------------------------------
-       Global State for Preprocessing
-    --------------------------------- */
-    let opencvReady = false;
-
-    // We store each effect’s enabled state and slider value
-    const preprocessSettings = {
-      grayscale: { enabled: false, value: 100 },
-      threshold: { enabled: false, value: 50 },
-      edges:     { enabled: false, value: 50 },
-      highlights:{ enabled: false, value: 50 },
-      brightness:{ enabled: false, value: 50 },
-      workerCount: 1  // default worker count
-    };
-
-    // Let’s attach an onRuntimeInitialized callback to OpenCV
-    cv['onRuntimeInitialized'] = () => {
-      console.log('OpenCV is fully initialized');
-      opencvReady = true;
-      // Update indicator color
-      const indicator = document.getElementById('opencv-indicator');
-      indicator.style.color = 'green'; 
-    };
-
     (function() {
+      // OpenCV Initialization
+      let opencvReady = false;
+      cv['onRuntimeInitialized'] = () => {
+        console.log('OpenCV is fully initialized');
+        opencvReady = true;
+        document.getElementById('opencv-status').style.color = 'green';
+      };
+      
+      // Preprocessing Settings
+      const preprocessSettings = {
+        grayscale: { enabled: false, value: 100 },
+        threshold: { enabled: false, value: 50 },
+        edges: { enabled: false, value: 50 },
+        highlights: { enabled: false, value: 50 },
+        brightness: { enabled: false, value: 50 },
+        threads: 1
+      };
+      
       // Helper to create DOM elements
       const createElement = (tag, attrs = {}, ...children) => {
         const el = document.createElement(tag);
@@ -575,7 +533,7 @@
         
         return { show, close };
       })();
-
+      
       // Preprocessing Modal
       const PreprocessingModal = (() => {
         const modal = document.getElementById('preprocessing-modal');
@@ -584,24 +542,22 @@
         const show = () => {
           modal.style.display = 'flex';
         };
+        
         const close = () => {
           modal.style.display = 'none';
         };
+        
         modalClose.addEventListener('click', close);
         window.addEventListener('click', (e) => {
           if (e.target === modal) {
             close();
           }
         });
-        window.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape' && modal.style.display === 'flex') {
-            close();
-          }
-        });
+        
         return { show, close };
       })();
       
-      // Browser Rendering FPS Counter
+      // FPS Counter
       const FPSCounter = (() => {
         const fpsVal = document.getElementById('fps-value');
         const fpsIndicator = document.getElementById('fps-indicator');
@@ -636,10 +592,13 @@
       // Camera Stream Module
       const CameraStream = (() => {
         const videoElement = document.getElementById('camera-stream');
+        const overlayCanvas = document.getElementById('overlayCanvas');
+        const frameCanvas = document.getElementById('frameCanvas');
         const loadingIndicator = document.getElementById('loading-indicator');
         const orientationValue = document.getElementById('orientation-value');
         const orientationCircle = document.getElementById('orientation-circle');
         const cameraFpsValue = document.getElementById('camera-fps-value');
+        const cameraFpsCircle = document.getElementById('camera-fps-circle');
         
         let currentStream = null;
         let currentCameraIndex = 0;
@@ -697,6 +656,13 @@
         
         const updateCameraFpsIndicator = (fps) => {
           cameraFpsValue.textContent = `Camera FPS: ${fps}`;
+          if (fps >= userChosenFps) {
+            cameraFpsCircle.style.backgroundColor = 'green';
+          } else if (fps >= userChosenFps / 2) {
+            cameraFpsCircle.style.backgroundColor = 'yellow';
+          } else {
+            cameraFpsCircle.style.backgroundColor = 'red';
+          }
           console.log(`Camera FPS updated: ${fps}`);
         };
         
@@ -735,120 +701,6 @@
           Modal.show(msg, [{ label: 'OK', onClick: Modal.close }]);
           console.log(msg);
         };
-
-        // (3) Setting up the MediaStreamTrackProcessor approach
-        async function processCameraStreamWithTrackProcessor(stream) {
-          // Grab the first video track
-          const track = stream.getVideoTracks()[0];
-          if (!track) {
-            console.error('No video track found for track processor.');
-            return;
-          }
-          
-          const processor = new MediaStreamTrackProcessor({ track });
-          const reader = processor.readable.getReader();
-          
-          console.log('Starting Track Processor loop...');
-          while (true) {
-            const result = await reader.read();
-            if (result.done) {
-              console.log('No more camera frames (stream ended).');
-              break;
-            }
-            
-            const frame = result.value; // This is a VideoFrame object
-            if (opencvReady) {
-              processFrameWithOpenCV(frame);
-            }
-            // Release the frame
-            frame.close();
-          }
-        }
-
-        // (4) OpenCV Preprocessing Function
-        function processFrameWithOpenCV(videoFrame) {
-          const frameCanvas = document.getElementById('frameCanvas');
-          const overlayCanvas = document.getElementById('overlayCanvas');
-          const ctx = frameCanvas.getContext('2d');
-          
-          // 1. Draw the VideoFrame onto a hidden <canvas>
-          frameCanvas.width = videoFrame.displayWidth;
-          frameCanvas.height = videoFrame.displayHeight;
-          ctx.clearRect(0, 0, frameCanvas.width, frameCanvas.height);
-          try {
-            ctx.drawImage(videoFrame, 0, 0, frameCanvas.width, frameCanvas.height);
-          } catch (err) {
-            console.error('drawImage(VideoFrame) not supported:', err);
-            return;
-          }
-          
-          // 2. Get pixel data
-          const imageData = ctx.getImageData(0, 0, frameCanvas.width, frameCanvas.height);
-          
-          // 3. Convert to OpenCV Mat
-          let srcMat = cv.matFromImageData(imageData);
-
-          // ============ PREPROCESSING ============
-
-          // Grayscale?
-          if (preprocessSettings.grayscale.enabled) {
-            cv.cvtColor(srcMat, srcMat, cv.COLOR_RGBA2GRAY, 0);
-            cv.cvtColor(srcMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
-          }
-
-          // Threshold?
-          if (preprocessSettings.threshold.enabled) {
-            let tVal = (preprocessSettings.threshold.value / 100) * 255;
-            cv.threshold(srcMat, srcMat, tVal, 255, cv.THRESH_BINARY);
-          }
-
-          // Edge Detection (Canny)?
-          if (preprocessSettings.edges.enabled) {
-            let eVal = preprocessSettings.edges.value;
-            let t1 = eVal * 2.5;
-            let t2 = t1 * 1.5;
-            let edgeMat = new cv.Mat();
-            cv.Canny(srcMat, edgeMat, t1, t2);
-            cv.cvtColor(edgeMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
-            edgeMat.delete();
-          }
-
-          // Highlights?
-          if (preprocessSettings.highlights.enabled) {
-            let kernelSize = Math.max(1, Math.floor(preprocessSettings.highlights.value / 10));
-            let kernel = new cv.Mat.ones(kernelSize, kernelSize, cv.CV_8U);
-            let highlightMat = new cv.Mat();
-            cv.dilate(srcMat, highlightMat, kernel);
-            highlightMat.copyTo(srcMat);
-            kernel.delete();
-            highlightMat.delete();
-          }
-
-          // Brightness?
-          if (preprocessSettings.brightness.enabled) {
-            let bVal = parseInt(preprocessSettings.brightness.value, 10);
-            let alpha = (bVal - 50); // range -50..+50
-            cv.convertScaleAbs(srcMat, srcMat, 1, alpha);
-          }
-          
-          // ============ END PREPROCESSING ============
-
-          // 4. Convert final srcMat back to ImageData
-          const processedData = new ImageData(
-            new Uint8ClampedArray(srcMat.data),
-            srcMat.cols,
-            srcMat.rows
-          );
-
-          // 5. Draw final data onto the overlayCanvas
-          const overlayCtx = overlayCanvas.getContext('2d');
-          overlayCanvas.width = srcMat.cols;
-          overlayCanvas.height = srcMat.rows;
-          overlayCtx.putImageData(processedData, 0, 0);
-
-          // 6. Cleanup
-          srcMat.delete();
-        }
         
         const startStream = async () => {
           if (isChangingStream) return;
@@ -910,9 +762,6 @@
             
             updateCameraFpsIndicator(s.frameRate);
             displayStreamSettings(s);
-
-            // Now start the Track Processor approach for raw frames
-            processCameraStreamWithTrackProcessor(currentStream);
             
             // If resolution mismatch
             if (
@@ -924,6 +773,11 @@
                 [{ label: 'OK', onClick: Modal.close }]
               );
               console.warn(`Resolution mismatch: asked for ${currentResolution.width}x${currentResolution.height}, got ${s.width}x${s.height}`);
+            }
+            
+            // Start processing frames with OpenCV if ready
+            if (opencvReady) {
+              await processCameraStreamWithTrackProcessor(currentStream);
             }
             
           } catch (err) {
@@ -1017,6 +871,116 @@
           resizeVideo();
         };
         
+        // Processing Frames with OpenCV
+        const processCameraStreamWithTrackProcessor = async (stream) => {
+          if (!('MediaStreamTrackProcessor' in window)) {
+            alert('MediaStreamTrackProcessor is not supported in your browser.');
+            return;
+          }
+          
+          const track = stream.getVideoTracks()[0];
+          const processor = new MediaStreamTrackProcessor({ track });
+          const reader = processor.readable.getReader();
+          
+          while (true) {
+            const result = await reader.read();
+            if (result.done) {
+              console.log('No more camera frames (stream ended).');
+              break;
+            }
+            
+            const frame = result.value; // This is a VideoFrame object
+            
+            // Process frame with OpenCV
+            if (opencvReady) {
+              processFrameWithOpenCV(frame);
+            }
+            
+            // Release the frame
+            frame.close();
+          }
+        };
+        
+        const processFrameWithOpenCV = (videoFrame) => {
+          const ctx = frameCanvas.getContext('2d');
+          
+          // Resize frameCanvas to match video frame
+          frameCanvas.width = videoFrame.displayWidth;
+          frameCanvas.height = videoFrame.displayHeight;
+          
+          // Draw the VideoFrame onto frameCanvas
+          try {
+            ctx.drawImage(videoFrame, 0, 0, frameCanvas.width, frameCanvas.height);
+          } catch (err) {
+            console.error('drawImage(VideoFrame) not supported:', err);
+            return;
+          }
+          
+          // Get image data from frameCanvas
+          const imageData = ctx.getImageData(0, 0, frameCanvas.width, frameCanvas.height);
+          
+          // Convert to OpenCV Mat
+          let srcMat = cv.matFromImageData(imageData);
+          
+          // Apply Preprocessing Effects
+          // (A) Grayscale
+          if (preprocessSettings.grayscale.enabled) {
+            cv.cvtColor(srcMat, srcMat, cv.COLOR_RGBA2GRAY, 0);
+            cv.cvtColor(srcMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
+          }
+          
+          // (B) Threshold
+          if (preprocessSettings.threshold.enabled) {
+            let tVal = (preprocessSettings.threshold.value / 100) * 255;
+            cv.threshold(srcMat, srcMat, tVal, 255, cv.THRESH_BINARY);
+          }
+          
+          // (C) Edge Detection
+          if (preprocessSettings.edges.enabled) {
+            let eVal = preprocessSettings.edges.value;
+            let t1 = eVal * 2.5; 
+            let t2 = t1 * 1.5;
+            let edgeMat = new cv.Mat();
+            cv.Canny(srcMat, edgeMat, t1, t2);
+            cv.cvtColor(edgeMat, srcMat, cv.COLOR_GRAY2RGBA, 0);
+            edgeMat.delete();
+          }
+          
+          // (D) Highlights
+          if (preprocessSettings.highlights.enabled) {
+            let kernelSize = Math.max(1, Math.floor(preprocessSettings.highlights.value / 10));
+            let kernel = cv.Mat.ones(kernelSize, kernelSize, cv.CV_8U);
+            let highlightMat = new cv.Mat();
+            cv.dilate(srcMat, highlightMat, kernel); // Example effect
+            highlightMat.copyTo(srcMat);
+            kernel.delete();
+            highlightMat.delete();
+          }
+          
+          // (E) Brightness
+          if (preprocessSettings.brightness.enabled) {
+            let bVal = parseInt(preprocessSettings.brightness.value, 10);
+            let alpha = (bVal - 50); // range -50..+50
+            cv.convertScaleAbs(srcMat, srcMat, 1, alpha);
+          }
+          
+          // Convert processed Mat back to ImageData
+          const processedData = new ImageData(
+            new Uint8ClampedArray(srcMat.data),
+            srcMat.cols,
+            srcMat.rows
+          );
+          
+          // Draw on overlay canvas
+          const overlayCtx = overlayCanvas.getContext('2d');
+          overlayCanvas.width = srcMat.cols;
+          overlayCanvas.height = srcMat.rows;
+          overlayCtx.putImageData(processedData, 0, 0);
+          
+          // Cleanup
+          srcMat.delete();
+        };
+        
         const init = async () => {
           await getCameras();
           await startStream();
@@ -1030,72 +994,60 @@
           });
         };
         
-        return { init, switchCamera, switchResolution, switchFps };
+        return { init, switchCamera, switchResolution, switchFps, processFrameWithOpenCV };
       })();
       
       // Permissions Module
       const Permissions = (() => {
-        /**
-         * Attempt to detect the camera permission state on page load
-         * and handle it accordingly. If 'prompt', we attempt to request access
-         * so the user sees the permission dialog. If 'granted', we reload immediately.
-         */
         const checkPermissions = async () => {
           try {
-            // Some browsers do not support navigator.permissions or 'camera' permission descriptor
-            if (!navigator.permissions || !navigator.permissions.query) {
-              console.warn('navigator.permissions not supported, directly calling requestCameraAccess().');
-              await requestCameraAccess();
-              return;
-            }
-
-            let cameraPermission = await navigator.permissions.query({ name: 'camera' });
-            console.log('Initial camera permission state:', cameraPermission.state);
-            handlePermissionState(cameraPermission.state);
-
-            // Listen for changes (e.g., user updates site settings in the middle)
-            cameraPermission.onchange = () => {
-              console.log('Camera permission changed to:', cameraPermission.state);
-              handlePermissionState(cameraPermission.state);
+            const status = await navigator.permissions.query({ name: 'camera' });
+            handlePermissionState(status.state);
+            
+            status.onchange = () => {
+              handlePermissionState(status.state);
             };
           } catch (err) {
             console.error('Error checking camera perms:', err);
-            // Fallback: directly request camera access
-            await requestCameraAccess();
+            Modal.show('An error occurred while accessing camera permissions.');
           }
         };
         
-        const handlePermissionState = (state) => {
-          switch(state) {
-            case 'granted':
-              // If camera is already granted, just reload the page so everything is reinitialized
-              console.log('Camera permission granted, reloading page...');
-              location.reload();
-              break;
-            case 'prompt':
-              // Try requesting camera access directly, which should show the prompt
-              requestCameraAccess();
-              break;
+        const handlePermissionState = (st) => {
+          switch(st) {
             case 'denied':
-              // Show a modal or alert; user can manually enable in their browser
               Modal.show('Camera access denied. Enable it in your browser settings.');
               break;
-            default:
-              // Some browsers might return an unknown state
+            case 'prompt':
               requestCameraAccess();
+              break;
+            case 'granted':
+              CameraStream.init().then(() => {
+                // Refresh the site if permissions are granted
+                console.log('Camera access granted. Refreshing the site.');
+                location.reload();
+              });
+              break;
+            default:
               break;
           }
         };
         
-        /**
-         * Directly calls getUserMedia to trigger a permission prompt if necessary.
-         * If the user allows, reload to re-initialize everything automatically.
-         */
         const requestCameraAccess = async () => {
           try {
             await navigator.mediaDevices.getUserMedia({ video: true });
-            console.log('User has granted camera access, reloading...');
-            location.reload();
+            Modal.show(
+              'Camera access granted. The page will refresh to start the camera stream.',
+              [
+                {
+                  label: 'Continue',
+                  onClick: () => {
+                    Modal.close();
+                    location.reload();
+                  }
+                }
+              ]
+            );
           } catch (error) {
             console.error('Error requesting camera access:', error);
             Modal.show('Camera access is required to use this application.');
@@ -1109,84 +1061,86 @@
         return { init };
       })();
       
-      // Handle UI for Preprocessing
-      function initPreprocessingControls() {
-        // Grayscale
-        document.getElementById('chkGrayscale').addEventListener('change', (e) => {
-          preprocessSettings.grayscale.enabled = e.target.checked;
-        });
-
-        // Threshold
-        const sliderThreshold = document.getElementById('sliderThreshold');
-        sliderThreshold.addEventListener('input', (e) => {
-          const val = parseInt(e.target.value, 10);
-          document.getElementById('valThreshold').textContent = val;
-          preprocessSettings.threshold.value = val;
-        });
-        document.getElementById('chkThreshold').addEventListener('change', (e) => {
-          preprocessSettings.threshold.enabled = e.target.checked;
-        });
-
-        // Edges
-        const sliderEdges = document.getElementById('sliderEdges');
-        sliderEdges.addEventListener('input', (e) => {
-          const val = parseInt(e.target.value, 10);
-          document.getElementById('valEdges').textContent = val;
-          preprocessSettings.edges.value = val;
-        });
-        document.getElementById('chkEdges').addEventListener('change', (e) => {
-          preprocessSettings.edges.enabled = e.target.checked;
-        });
-
-        // Highlights
-        const sliderHighlights = document.getElementById('sliderHighlights');
-        sliderHighlights.addEventListener('input', (e) => {
-          const val = parseInt(e.target.value, 10);
-          document.getElementById('valHighlights').textContent = val;
-          preprocessSettings.highlights.value = val;
-        });
-        document.getElementById('chkHighlights').addEventListener('change', (e) => {
-          preprocessSettings.highlights.enabled = e.target.checked;
-        });
-
-        // Brightness
-        const sliderBrightness = document.getElementById('sliderBrightness');
-        sliderBrightness.addEventListener('input', (e) => {
-          const val = parseInt(e.target.value, 10);
-          document.getElementById('valBrightness').textContent = val;
-          preprocessSettings.brightness.value = val;
-        });
-        document.getElementById('chkBrightness').addEventListener('change', (e) => {
-          preprocessSettings.brightness.enabled = e.target.checked;
-        });
-
-        // Web Worker count
-        const workerRadios = document.querySelectorAll('input[name="workerCount"]');
-        workerRadios.forEach(radio => {
-          radio.addEventListener('change', (e) => {
-            preprocessSettings.workerCount = parseInt(e.target.value, 10);
-            console.log(`Selected ${preprocessSettings.workerCount} Web Worker(s).`);
+      // Preprocessing Controls Handling
+      const PreprocessingControls = (() => {
+        const init = () => {
+          // Grayscale
+          document.getElementById('chkGrayscale').addEventListener('change', (e) => {
+            preprocessSettings.grayscale.enabled = e.target.checked;
           });
-        });
+          
+          // Threshold
+          const sliderThreshold = document.getElementById('sliderThreshold');
+          const valThreshold = document.getElementById('valThreshold');
+          sliderThreshold.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value, 10);
+            valThreshold.textContent = val;
+            preprocessSettings.threshold.value = val;
+          });
+          document.getElementById('chkThreshold').addEventListener('change', (e) => {
+            preprocessSettings.threshold.enabled = e.target.checked;
+          });
+          
+          // Edge Detection
+          const sliderEdges = document.getElementById('sliderEdges');
+          const valEdges = document.getElementById('valEdges');
+          sliderEdges.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value, 10);
+            valEdges.textContent = val;
+            preprocessSettings.edges.value = val;
+          });
+          document.getElementById('chkEdges').addEventListener('change', (e) => {
+            preprocessSettings.edges.enabled = e.target.checked;
+          });
+          
+          // Highlights
+          const sliderHighlights = document.getElementById('sliderHighlights');
+          const valHighlights = document.getElementById('valHighlights');
+          sliderHighlights.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value, 10);
+            valHighlights.textContent = val;
+            preprocessSettings.highlights.value = val;
+          });
+          document.getElementById('chkHighlights').addEventListener('change', (e) => {
+            preprocessSettings.highlights.enabled = e.target.checked;
+          });
+          
+          // Brightness
+          const sliderBrightness = document.getElementById('sliderBrightness');
+          const valBrightness = document.getElementById('valBrightness');
+          sliderBrightness.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value, 10);
+            valBrightness.textContent = val;
+            preprocessSettings.brightness.value = val;
+          });
+          document.getElementById('chkBrightness').addEventListener('change', (e) => {
+            preprocessSettings.brightness.enabled = e.target.checked;
+          });
 
-        // Show/hide the modal
-        document.getElementById('preprocessing-button').addEventListener('click', () => {
-          PreprocessingModal.show();
-        });
-      }
-
+          // Thread Selection
+          const threadSelection = document.getElementById('thread-selection');
+          threadSelection.addEventListener('change', (e) => {
+            preprocessSettings.threads = parseInt(e.target.value, 10);
+            console.log(`Selected ${preprocessSettings.threads} thread(s) for preprocessing.`);
+          });
+        };
+        
+        return { init };
+      })();
+      
       // Initialize Everything
       document.addEventListener('DOMContentLoaded', () => {
-        FPSCounter.start();   // Start the rendering FPS loop
-        Permissions.init();   // Prompt for camera permission, auto-reload after granted
-
+        FPSCounter.start();         // Start the rendering FPS loop
+        Permissions.init();         // Check camera perms, then init camera if granted
+        PreprocessingControls.init(); // Initialize preprocessing controls
+        
         // Hook up controls
         document.getElementById('change-camera').addEventListener('click', CameraStream.switchCamera);
         document.getElementById('change-resolution').addEventListener('click', debounce(CameraStream.switchResolution));
         document.getElementById('change-fps').addEventListener('click', debounce(CameraStream.switchFps));
-
-        // Preprocessing controls
-        initPreprocessingControls();
+        document.getElementById('preprocessing-button').addEventListener('click', () => {
+          PreprocessingModal.show();
+        });
       });
       
       function debounce(func, delay = 300) {
